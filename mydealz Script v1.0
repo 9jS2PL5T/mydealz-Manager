@@ -30,8 +30,8 @@
     const Hotnessghost = '0.8';
     const Hotnessvisible = 'block';
 
-    const excludeWords = ['wallbox', 'balkonkraftwerk', 'leasing'];
-    const excludeMerchantIDs = ['11901', '1261', '258'];
+    const excludeWords = ['wort1', 'wort2']; Wort einfügen -> Deal mit diesem Wort im Titel wird ausgeblendet.
+    const excludeMerchantIDs = ['112', '110']; ID des Händlers einfügen -> Deals mit diesem Händler werden ausgeblendet. ID steht am Ende des Links der zum Händler führt. Bsp: 
 
     const HIDDEN_DEALS_KEY = 'hiddenDeals';
     const hiddenDeals = JSON.parse(localStorage.getItem(HIDDEN_DEALS_KEY)) || [];
