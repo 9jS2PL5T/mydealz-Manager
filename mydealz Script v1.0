@@ -1,0 +1,168 @@
+// ==UserScript==
+// @name         mydealz Script
+// @namespace    http://tampermonkey.net/
+// @version      1.0
+// @description  Funktionen zum Hervorheben, Ausblenden und Verwalten von Deals auf mydealz.de
+// @author       Moritz Baumeister, Flo
+// @license      MIT
+// @match        https://www.mydealz.de/*
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // Konfiguration der Skripteinstellungen
+    const enableGeizfaktorHighlighting = true; // Geizfaktor-Hervorhebung aktivieren/deaktivieren (true/false)
+    const enableMaximalpreisHighlighting = true; // Maximalpreis-Hervorhebung aktivieren/deaktivieren (true/false)
+    const enableHotnessHighlighting = true; // Hotness-Hervorhebung aktivieren/deaktivieren (true/false)
+    const enableHideButton = true; // Button zum Ausblenden aktivieren/deaktivieren (true/false)
+
+    const Geizfaktor = 6; // Mindestersparnis in Euro
+    const Geizfaktorghost = '0.5';
+    const Geizfaktorvisible = 'block';
+
+    const Maximalpreis = 500;
+    const Maximalpreisghost = '0.3';
+    const Maximalpreisvisible = 'block';
+
+    const HotnessLimit = 1; // Mindest-Hotness-Wert für Deals
+    const Hotnessghost = '0.8';
+    const Hotnessvisible = 'block';
+
+    const excludeWords = ['wallbox', 'balkonkraftwerk', 'leasing'];
+    const excludeMerchantIDs = ['11901', '1261', '258'];
+
+    const HIDDEN_DEALS_KEY = 'hiddenDeals';
+    const hiddenDeals = JSON.parse(localStorage.getItem(HIDDEN_DEALS_KEY)) || [];
+
+    function saveHiddenDeals() {
+        localStorage.setItem(HIDDEN_DEALS_KEY, JSON.stringify(hiddenDeals));
+    }
+
+    function hideDeal(deal) {
+        deal.style.display = 'none';
+    }
+
+    function convertPriceToNumber(priceString) {
+        let numberString = priceString.replace('€', '').trim();
+        numberString = numberString.replace(/\./g, '').replace(',', '.');
+        return parseFloat(numberString);
+    }
+
+    function shouldExcludeArticle(article) {
+        const titleElement = article.querySelector('.thread-title');
+        const merchantLink = article.querySelector('a[href*="merchant-id="]');
+
+        if (titleElement && excludeWords.some(word => titleElement.textContent.toLowerCase().includes(word.toLowerCase()))) {
+            return true;
+        }
+
+        if (merchantLink) {
+            const merchantIDMatch = merchantLink.getAttribute('href').match(/merchant-id=(\d+)/);
+            if (merchantIDMatch) {
+                const merchantID = merchantIDMatch[1];
+                if (excludeMerchantIDs.includes(merchantID)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    function highlightDeals(article) {
+        if (shouldExcludeArticle(article)) {
+            article.style.display = 'none';
+            return;
+        }
+
+        const originalPriceElement = article.querySelector('.color--text-NeutralSecondary.text--lineThrough');
+        const reducedPriceElement = article.querySelector('.thread-price');
+        const hotnessElement = article.querySelector('.vote-temp');
+
+        if (enableHotnessHighlighting && hotnessElement) {
+            const hotnessValue = parseInt(hotnessElement.textContent);
+            if (hotnessValue < HotnessLimit) {
+                article.style = `background-color: rgba(0, 0, 255, 0.1); opacity: ${Hotnessghost};`;
+                article.title = `Hotness unter ${HotnessLimit}`;
+                article.style.display = `${Hotnessvisible}`;
+            }
+        }
+
+        if (enableGeizfaktorHighlighting && originalPriceElement && reducedPriceElement) {
+            const originalPrice = convertPriceToNumber(originalPriceElement.textContent);
+            const reducedPrice = convertPriceToNumber(reducedPriceElement.textContent);
+            const savings = originalPrice - reducedPrice;
+
+            if (savings < Geizfaktor) {
+                article.style = `background-color: rgba(255, 121, 0, 0.2); opacity: ${Geizfaktorghost};`;
+                article.title = `Ersparnis ist weniger als ${Geizfaktor}€`;
+                article.style.display = `${Geizfaktorvisible}`;
+            }
+        }
+
+        if (enableMaximalpreisHighlighting && reducedPriceElement) {
+            const priceValue = convertPriceToNumber(reducedPriceElement.textContent);
+            if (priceValue > Maximalpreis) {
+                article.style = `background-color: rgba(255, 34, 34, 0.1); opacity: ${Maximalpreisghost};`;
+                article.title = `Preis ist über Limit von ${Maximalpreis}€`;
+                article.style.display = `${Maximalpreisvisible}`;
+            }
+        }
+    }
+
+    function addHideButtons() {
+        if (!enableHideButton) return;
+
+        const deals = document.querySelectorAll('article:not([data-button-added])');
+
+        deals.forEach(deal => {
+            let dealId = deal.getAttribute('id');
+            if (!dealId) {
+                dealId = 'custom-deal-' + Math.random().toString(36).substr(2, 9);
+                deal.setAttribute('id', dealId);
+            }
+
+            if (hiddenDeals.includes(dealId)) {
+                hideDeal(deal);
+                return;
+            }
+
+            deal.setAttribute('data-button-added', 'true');
+
+            const hideButton = document.createElement('button');
+            hideButton.innerHTML = '❌';
+            hideButton.style.marginLeft = '10px';
+            hideButton.addEventListener('click', () => {
+                hiddenDeals.push(dealId);
+                saveHiddenDeals();
+                hideDeal(deal);
+            });
+
+            const parentElement = deal.querySelector('.flex.boxAlign-ai--all-c.boxAlign-jc--all-sb.space--b-3.space--fromW3-b-2');
+            if (parentElement) {
+                parentElement.insertBefore(hideButton, parentElement.children[1]);
+            }
+        });
+    }
+
+    function processArticles() {
+        const articles = document.querySelectorAll('article');
+        articles.forEach(article => {
+            highlightDeals(article);
+        });
+        addHideButtons();
+    }
+
+    const observer = new MutationObserver(mutations => {
+        mutations.forEach(() => {
+            processArticles();
+        });
+    });
+
+    const config = { childList: true, subtree: true };
+    observer.observe(document.body, config);
+
+    processArticles();
+})();
