@@ -1,5 +1,7 @@
 V1.2.0 Beta beinhaltet kein Highlighting mehr. Bugfixing erforderlich.
 
+Möglichkeit eines Backups um Daten lokal zu sichern
+
 Geizfaktor erweitern, so dass Mindestersparnis in Euro und % möglich ist. 
 
 [ERLEDIGT V1.2.0 Beta] 
