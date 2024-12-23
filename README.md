@@ -1,4 +1,4 @@
-V1.2.0 beinhaltet kein Highlighting mehr. Bugfixing erforderlich.
+V1.2.0 Beta beinhaltet kein Highlighting mehr. Bugfixing erforderlich.
 
 Geizfaktor erweitern, so dass Mindestersparnis in Euro und % möglich ist. 
 
