@@ -1,4 +1,4 @@
-# Grundlegende Funktionen von Github
+# Grundlegende Funktionen
 
 ## Markdown für Readme.md
 [https://markdown-it.github.io/](https://markdown-it.github.io/)
