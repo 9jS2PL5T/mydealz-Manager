@@ -1,7 +1,8 @@
-V1.2.0 Beta beinhaltet kein Highlighting und Button zum Ausblenden mehr. Bugfixing erforderlich.
+ab V1.2.0 Beta beinhaltet kein Highlighting und Button zum Ausblenden mehr. Bugfixing erforderlich.
 
 Button hinzufügen: Diesen Händler ausblenden. Händler ID wird dann auf die Blacklist gesetzt.
 
+[ERLEDIGT V1.3.0 Beta]
 Möglichkeit eines Backups um Daten lokal zu sichern
 
 Geizfaktor erweitern, so dass Mindestersparnis in Euro und % möglich ist. 
