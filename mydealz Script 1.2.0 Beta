@@ -1,0 +1,189 @@
+// ==UserScript==
+// @name         mydealz Script mit UI Beta
+// @namespace    http://tampermonkey.net/
+// @version      1.2.0
+// @description  UI zur Verwaltung von excludeWords und excludeMerchantIDs
+// @author       Moritz Baumeister, Flo
+// @license      MIT
+// @match        https://www.mydealz.de/*
+// @grant        none
+// ==/UserScript==
+
+// Versions-Änderungen:
+// 1.3.0: Hinzugefügt: Benutzeroberfläche (UI) zur Bearbeitung von excludeWords und excludeMerchantIDs direkt auf der Website.
+// 1.2.0: excludeWords und excludeMerchantIDs in localStorage ausgelagert, um Daten bei Updates zu erhalten.
+// 1.1.0: Tooltip für den Ausblenden-Button hinzugefügt, Fehlerbehebung bei Anzeige von Deals.
+// 1.0.1: Fehlerbehebung bei Preisumrechnung, Performance-Optimierung bei Deal-Hervorhebung.
+
+(function() {
+    'use strict';
+
+    // --- 1. Konfiguration ---
+    const EXCLUDE_WORDS_KEY = 'excludeWords';
+    const EXCLUDE_MERCHANTS_KEY = 'excludeMerchantIDs';
+
+    // Lade gespeicherte Werte oder setze leere Arrays
+    let excludeWords = JSON.parse(localStorage.getItem(EXCLUDE_WORDS_KEY)) || [];
+    let excludeMerchantIDs = JSON.parse(localStorage.getItem(EXCLUDE_MERCHANTS_KEY)) || [];
+
+    function saveExcludeWords(words) {
+        localStorage.setItem(EXCLUDE_WORDS_KEY, JSON.stringify(words));
+    }
+
+    function saveExcludeMerchants(merchants) {
+        localStorage.setItem(EXCLUDE_MERCHANTS_KEY, JSON.stringify(merchants));
+    }
+
+    // --- 2. Hilfsfunktionen ---
+    function shouldExcludeArticle(article) {
+        const titleElement = article.querySelector('.thread-title');
+        const merchantLink = article.querySelector('a[href*="merchant-id="]');
+
+        if (titleElement && excludeWords.some(word => titleElement.textContent.toLowerCase().includes(word.toLowerCase()))) {
+            return true;
+        }
+
+        if (merchantLink) {
+            const merchantIDMatch = merchantLink.getAttribute('href').match(/merchant-id=(\d+)/);
+            if (merchantIDMatch) {
+                const merchantID = merchantIDMatch[1];
+                if (excludeMerchantIDs.includes(merchantID)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    function hideDeal(deal) {
+        deal.style.display = 'none';
+    }
+
+    function processArticles() {
+        const articles = document.querySelectorAll('article');
+        articles.forEach(article => {
+            if (shouldExcludeArticle(article)) {
+                hideDeal(article);
+            } else {
+                article.style.display = 'block';
+                article.style.opacity = '1'; // Transparenz zurücksetzen
+            }
+        });
+    }
+
+    // --- 3. Benutzeroberfläche (UI) ---
+    let settingsDiv = null; // Einstellungsfenster
+    let isSettingsOpen = false; // Status, ob die Einstellungen geöffnet sind
+
+    function createSettingsUI() {
+        if (isSettingsOpen) return; // Verhindern, dass mehrere Fenster geöffnet werden
+
+        isSettingsOpen = true;
+
+        // Lade aktuelle Werte aus localStorage, wenn das Fenster geöffnet wird
+        const currentExcludeWords = JSON.parse(localStorage.getItem(EXCLUDE_WORDS_KEY)) || [];
+        const currentExcludeMerchantIDs = JSON.parse(localStorage.getItem(EXCLUDE_MERCHANTS_KEY)) || [];
+
+        // Einstellungsfenster erstellen
+        settingsDiv = document.createElement('div');
+        settingsDiv.style.position = 'fixed';
+        settingsDiv.style.bottom = '10px';
+        settingsDiv.style.right = '10px';
+        settingsDiv.style.padding = '15px';
+        settingsDiv.style.background = '#f9f9f9';
+        settingsDiv.style.border = '1px solid #ccc';
+        settingsDiv.style.borderRadius = '5px';
+        settingsDiv.style.zIndex = '1000';
+        settingsDiv.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
+        settingsDiv.style.maxWidth = '300px';
+        settingsDiv.style.overflow = 'auto';
+
+        // HTML-Inhalt für das Einstellungsfenster
+        settingsDiv.innerHTML = `
+            <h4 style="margin-bottom: 10px;">Exclude Einstellungen</h4>
+
+            <div style="margin-bottom: 15px;">
+                <label for="excludeWordsInput" style="font-weight: bold;">Exclude Words</label>
+                <textarea id="excludeWordsInput" rows="5" style="width: 100%; margin-top: 5px; padding: 5px; border: 1px solid #ccc; border-radius: 3px; background: #f0f0f0;">${currentExcludeWords.join('\n')}</textarea>
+            </div>
+
+            <div style="margin-bottom: 15px;">
+                <label for="excludeMerchantIDsInput" style="font-weight: bold;">Exclude Merchant IDs</label>
+                <textarea id="excludeMerchantIDsInput" rows="3" style="width: 100%; margin-top: 5px; padding: 5px; border: 1px solid #ccc; border-radius: 3px; background: #f0f0f0;">${currentExcludeMerchantIDs.join('\n')}</textarea>
+            </div>
+
+            <div style="text-align: right;">
+                <button id="saveSettingsButton" style="padding: 8px 12px; background: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer;">Speichern</button>
+                <button id="closeSettingsButton" style="padding: 8px 12px; background: #f44336; color: white; border: none; border-radius: 3px; cursor: pointer; margin-left: 10px;">Schließen</button>
+            </div>
+        `;
+
+        // Einstellungsfenster zur Seite hinzufügen
+        document.body.appendChild(settingsDiv);
+
+        // Event-Listener für "Speichern"
+        const saveSettingsButton = document.getElementById('saveSettingsButton');
+        saveSettingsButton.addEventListener('click', () => {
+            // Neue Werte aus den Feldern lesen
+            const newWords = document.getElementById('excludeWordsInput').value
+                .split('\n').map(w => w.trim()).filter(Boolean);
+            const newMerchantIDs = document.getElementById('excludeMerchantIDsInput').value
+                .split('\n').map(id => id.trim()).filter(Boolean);
+
+            // In localStorage speichern
+            saveExcludeWords(newWords);
+            saveExcludeMerchants(newMerchantIDs);
+
+            // Arrays aktualisieren
+            excludeWords.length = 0;
+            excludeWords.push(...newWords);
+
+            excludeMerchantIDs.length = 0;
+            excludeMerchantIDs.push(...newMerchantIDs);
+
+            // Deals erneut prüfen
+            processArticles();
+        });
+
+        // Event-Listener für "Schließen"
+        const closeSettingsButton = document.getElementById('closeSettingsButton');
+        closeSettingsButton.addEventListener('click', () => {
+            settingsDiv.style.display = 'none'; // Fenster schließen
+            isSettingsOpen = false; // Status zurücksetzen
+            settingsDiv.remove(); // Fenster vollständig entfernen
+        });
+    }
+
+    // Funktion, um den Button für die Einstellungen zu erstellen
+    function createSettingsButton() {
+        const button = document.createElement('button');
+        button.textContent = 'Einstellungen';
+        button.style.position = 'fixed';
+        button.style.bottom = '10px';
+        button.style.right = '150px';
+        button.style.padding = '10px';
+        button.style.background = '#007BFF';
+        button.style.color = 'white';
+        button.style.border = 'none';
+        button.style.borderRadius = '5px';
+        button.style.cursor = 'pointer';
+        button.style.zIndex = '1000';
+
+        button.addEventListener('click', () => {
+            createSettingsUI();
+        });
+
+        document.body.appendChild(button);
+    }
+
+    // --- 4. Start: Deals prüfen & UI anzeigen ---
+    const observer = new MutationObserver(() => {
+        processArticles();
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    processArticles(); // Initial ausführen, um alle Deals sofort zu prüfen
+    createSettingsButton(); // UI-Button anzeigen, um die Einstellungen zu öffnen
+})();
