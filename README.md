@@ -1,4 +1,4 @@
-V1.2.0 Beta beinhaltet kein Highlighting mehr. Bugfixing erforderlich.
+V1.2.0 Beta beinhaltet kein Highlighting und Button zum Ausblenden mehr. Bugfixing erforderlich.
 
 Möglichkeit eines Backups um Daten lokal zu sichern
 
