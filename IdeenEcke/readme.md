@@ -1,5 +1,7 @@
 ## Händler ausblenden  
 data-t="merchantLink"
+[GPT Promt](https://chatgpt.com/share/676ab329-d0ec-8003-9055-d33b10cfec6e)  
+hat anfangs gut funktioniert, allerdings mit dem Bug, das der Artikellink angeklickt und somit der artikel aufgerufen wird..
 
 ## Kopplung der Deal Farbe an die Temperatur
 Die einfärbungen sind ja mehr oder weniger willkürlich gewählt, um das vlt etwas besser an Mydealz anzupassen hatte ich hier die überlegung die Farbe von   
