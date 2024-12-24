@@ -1,3 +1,6 @@
+## Händler ausblenden  
+data-t="merchantLink"
+
 ## Kopplung der Deal Farbe an die Temperatur
 Die einfärbungen sind ja mehr oder weniger willkürlich gewählt, um das vlt etwas besser an Mydealz anzupassen hatte ich hier die überlegung die Farbe von   
 <button title="Derzeit bewertet mit 80°. Dein Vote verändert die Temperatur!" class="cept-vote-temp vote-temp size--all-m space--l-half-1 vote-temp--warm space--mh-1"><span>80° </span><span class="popover-origin space--b-2"><!----></span></button>  
