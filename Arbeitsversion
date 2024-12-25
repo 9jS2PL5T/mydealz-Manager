@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         mydealz Script Arbeitsversion
+// @name         mydealz Script Arbeitsversion ohne funktion
 // @namespace    http://tampermonkey.net/
-// @version      1.5.0
+// @version      1.5.1
 // @description  UI zur Verwaltung von excludeWords und excludeMerchantIDs mit Backup und Restore
 // @author       Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister), Flo (https://www.mydealz.de/profile/Basics0119)
 // @license      MIT
@@ -169,7 +169,7 @@
 
         const hotnessLimitInput = document.getElementById('hotnesslimitInput');
         hotnessLimitInput.addEventListener('input', () => {
-            const newLimit = parseFloat(hotnessLimitInput.value) || 50;
+            const newLimit = parseFloat(hotnesslimitInput.value) || 50;
             localStorage.setItem('hotnessLimit', newLimit);
             processArticles(); // Sofortige Anwendung
         });
@@ -246,6 +246,29 @@
         deal.style.display = 'none';
     }
 
+    // Globale Deklarationen der Buttons
+    const settingsButton = document.createElement('button');
+    settingsButton.innerHTML = '⚙️';
+    settingsButton.style.padding = '10px';
+    settingsButton.style.background = 'transparent'; // Hintergrund transparent machen
+    settingsButton.style.color = 'white';
+    settingsButton.style.border = 'none';
+    settingsButton.style.borderRadius = '5px';
+    settingsButton.style.cursor = 'pointer';
+    settingsButton.addEventListener('click', createSettingsUI);
+
+    const hideButton = document.createElement('button');
+    hideButton.innerHTML = '❌';
+    hideButton.style.marginLeft = '10px';
+    hideButton.title = 'Deal verbergen';
+    hideButton.addEventListener('click', function() {
+        const deal = this.closest('article');
+        const dealId = deal.getAttribute('id') || 'custom-deal-' + Math.random().toString(36).substr(2, 9);
+        hiddenDeals.push(dealId);
+        saveHiddenDeals();
+        hideDeal(deal);
+    });
+
     function addHideButtons() {
         const deals = document.querySelectorAll('article:not([data-button-added])');
 
@@ -263,55 +286,16 @@
 
             deal.setAttribute('data-button-added', 'true');
 
-            const hideButton = document.createElement('button');
-            hideButton.innerHTML = '❌';
-            hideButton.style.marginLeft = '10px';
-            hideButton.title = 'Deal verbergen'; // Tooltip hinzufügen
-            hideButton.addEventListener('click', () => {
-                hiddenDeals.push(dealId);
-                saveHiddenDeals();
-                hideDeal(deal);
-            });
+            const hideButtonClone = hideButton.cloneNode(true);
+            const settingsButtonClone = settingsButton.cloneNode(true);
 
             const parentElement = deal.querySelector('.flex.boxAlign-ai--all-c.boxAlign-jc--all-sb.space--b-3.space--fromW3-b-2');
             if (parentElement) {
-                parentElement.insertBefore(hideButton, parentElement.children[1]);
-                parentElement.insertBefore(settingsButton, hideButton.nextSibling);
+                parentElement.insertBefore(hideButtonClone, parentElement.children[1]);
+                parentElement.insertBefore(settingsButtonClone, hideButtonClone.nextSibling);
             }
         });
     }
-
-    // UI-Button zum Öffnen der Einstellungen wird nur einmal erstellt
-    const settingsButton = document.createElement('button');
-    settingsButton.innerHTML = '⚙️';
-    settingsButton.style.padding = '10px';
-    settingsButton.style.background = 'transparent'; // Hintergrund transparent machen
-    settingsButton.style.color = 'white';
-    settingsButton.style.border = 'none';
-    settingsButton.style.borderRadius = '5px';
-    settingsButton.style.cursor = 'pointer';
-
-    // Füge den Button in jedes Dealfenster ein, rechts neben den 'Deal verbergen'-Button
-    function addSettingsButton() {
-        const deals = document.querySelectorAll('article.thread--deal');
-        deals.forEach(deal => {
-            const hideButton = deal.querySelector('button[title="Deal verbergen"]');
-            if (hideButton) {
-                hideButton.insertAdjacentElement('afterend', settingsButton.cloneNode(true));
-            }
-        });
-    }
-
-    settingsButton.addEventListener('click', createSettingsUI);
-
-    // Event-Listener für den neuen Settings-Button
-    document.addEventListener('click', function(event) {
-        if (event.target && event.target.innerHTML === '⚙️') {
-            createSettingsUI();
-        }
-    });
-
-    document.addEventListener('DOMContentLoaded', addHideButtons);
 
     function processArticles() {
         const articles = document.querySelectorAll('article.thread--deal');
