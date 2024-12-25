@@ -252,7 +252,7 @@ document.head.appendChild(fontAwesomeLink);
         deal.style.display = 'none';
     }
 
-    // UI-Button zum Öffnen der Einstellungen wird nur einmal erstellt
+    // UI-Button zum Öffnen der Einstellungen
     const settingsButton = document.createElement('button');
     settingsButton.innerHTML = '⚙️';
     settingsButton.style.padding = '10px';
@@ -327,7 +327,7 @@ document.head.appendChild(fontAwesomeLink);
     // Event-Listener für den neuen Settings-Button
     document.addEventListener('click', function(event) {
         if (event.target && event.target.innerHTML === '⚙️') {
-            createSettingsUI();
+            toggleSettingsUI();
         }
     });
 
@@ -400,12 +400,14 @@ document.head.appendChild(fontAwesomeLink);
     }
 
     // --- 4. Benutzeroberfläche (UI) ---
-    let settingsDiv = null;
-    let isSettingsOpen = false;
-
-    function createSettingsUI() {
-        if (isSettingsOpen) return;
-        isSettingsOpen = true;
+    function toggleSettingsUI() {
+        if (isSettingsOpen) {
+            isSettingsOpen = false;
+            if (settingsDiv) {
+                settingsDiv.remove();
+            }
+        } else {
+            isSettingsOpen = true;
 
         const currentExcludeWords = JSON.parse(localStorage.getItem(EXCLUDE_WORDS_KEY)) || [];
         const currentExcludeMerchantIDs = JSON.parse(localStorage.getItem(EXCLUDE_MERCHANTS_KEY)) || [];
@@ -476,7 +478,6 @@ document.head.appendChild(fontAwesomeLink);
         </div>
     `;
 
-
         document.body.appendChild(settingsDiv);
 
         // Maximale Preis-Checkbox: Zustand speichern und Highlighting anwenden
@@ -537,7 +538,6 @@ document.head.appendChild(fontAwesomeLink);
             saveExcludeMerchants(newMerchantIDs);
 
             // Konfiguration aktualisieren
-
             excludeWords = newWords;
             excludeMerchantIDs = newMerchantIDs;
 
