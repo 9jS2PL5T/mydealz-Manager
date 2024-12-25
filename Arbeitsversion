@@ -273,9 +273,20 @@
                 hideDeal(deal);
             });
 
+            const settingsButton = document.createElement('button');
+            settingsButton.innerHTML = '⚙️';
+            settingsButton.style.padding = '10px';
+            settingsButton.style.background = '#2196F3';
+            settingsButton.style.color = 'white';
+            settingsButton.style.border = 'none';
+            settingsButton.style.borderRadius = '5px';
+            settingsButton.style.cursor = 'pointer';
+            settingsButton.addEventListener('click', createSettingsUI);
+
             const parentElement = deal.querySelector('.flex.boxAlign-ai--all-c.boxAlign-jc--all-sb.space--b-3.space--fromW3-b-2');
             if (parentElement) {
                 parentElement.insertBefore(hideButton, parentElement.children[1]);
+                parentElement.insertBefore(settingsButton, hideButton.nextSibling);
             }
         });
     }
@@ -510,7 +521,6 @@
     settingsButton.style.border = 'none';
     settingsButton.style.borderRadius = '5px';
     settingsButton.style.cursor = 'pointer';
-    document.body.appendChild(settingsButton);
 
     // Füge den Button in jedes Dealfenster ein, rechts neben den 'Deal verbergen'-Button
     function addSettingsButton() {
