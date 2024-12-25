@@ -36,7 +36,7 @@
         const highlightHotness = loadHotnessCheckboxState();
 
         // Geizfaktor: Orange färben
-        const geizfaktorDeals = document.querySelectorAll('.deal.geizfaktor');
+        const geizfaktorDeals = document.querySelectorAll('article.thread--deal.geizfaktor');
         geizfaktorDeals.forEach(deal => {
             if (highlightGeizfaktor) {
                 deal.style.backgroundColor = 'orange';
@@ -46,7 +46,7 @@
         });
 
         // Maximalpreis: Rot färben
-        const maximalpreisDeals = document.querySelectorAll('.deal.maximalpreis');
+        const maximalpreisDeals = document.querySelectorAll('article.thread--deal.maximalpreis');
         maximalpreisDeals.forEach(deal => {
             if (highlightMaximalpreis) {
                 deal.style.backgroundColor = 'red';
@@ -56,7 +56,7 @@
         });
 
         // Hotnesslimit: Blau färben
-        const hotnessDeals = document.querySelectorAll('.deal.hotness');
+        const hotnessDeals = document.querySelectorAll('article.thread--deal.hotness');
         hotnessDeals.forEach(deal => {
             if (highlightHotness) {
                 deal.style.backgroundColor = 'blue';
@@ -234,11 +234,11 @@
 
         // Wende das Highlighting nur an, wenn es aktiviert ist
         if (highlightGeizfaktor && price < GEIZFAKTOR_LIMIT) {
-            deal.style.backgroundColor = 'orange';
+            deal.classList.add('geizfaktor');
         } else if (highlightMaximalpreis && price > MAXIMALPREIS_LIMIT) {
-            deal.style.backgroundColor = 'red';
+            deal.classList.add('maximalpreis');
         } else if (highlightHotness && hotness < HOTNESS_LIMIT) {
-            deal.style.backgroundColor = 'blue';
+            deal.classList.add('hotness');
         }
     }
 
@@ -281,16 +281,16 @@
     }
 
     function processArticles() {
-        const articles = document.querySelectorAll('article');
+        const articles = document.querySelectorAll('article.thread--deal');
         articles.forEach(article => {
             if (shouldExcludeArticle(article)) {
                 hideDeal(article);
             } else {
                 article.style.display = 'block';
                 article.style.opacity = '1'; // Transparenz zurücksetzen
+                // Färbe den Deal basierend auf den Kategorien
+                colorDeal(article);
             }
-            // Färbe den Deal basierend auf den Kategorien
-            colorDeal(article);
         });
         addHideButtons();
     }
@@ -504,9 +504,6 @@
     // UI-Button zum Öffnen der Einstellungen
     const settingsButton = document.createElement('button');
     settingsButton.innerHTML = '⚙️';
-    settingsButton.style.position = 'fixed';
-    settingsButton.style.bottom = '10px';
-    settingsButton.style.left = '10px';
     settingsButton.style.padding = '10px';
     settingsButton.style.background = '#2196F3';
     settingsButton.style.color = 'white';
@@ -514,6 +511,26 @@
     settingsButton.style.borderRadius = '5px';
     settingsButton.style.cursor = 'pointer';
     document.body.appendChild(settingsButton);
+
+    // Füge den Button in jedes Dealfenster ein, rechts neben den 'Deal verbergen'-Button
+    function addSettingsButton() {
+        const deals = document.querySelectorAll('article.thread--deal');
+        deals.forEach(deal => {
+            const hideButton = deal.querySelector('button[title="Deal verbergen"]');
+            if (hideButton) {
+                hideButton.insertAdjacentElement('afterend', settingsButton.cloneNode(true));
+            }
+        });
+    }
+
+    // Event-Listener für den neuen Settings-Button
+    document.addEventListener('click', function(event) {
+        if (event.target && event.target.innerHTML === '⚙️') {
+            createSettingsUI();
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', addSettingsButton);
 
     settingsButton.addEventListener('click', createSettingsUI);
 
