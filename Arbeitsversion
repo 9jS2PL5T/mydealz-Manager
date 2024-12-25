@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         mydealz Script Beta Arbeitsversion
+// @name         mydealz Script Beta
 // @namespace    http://tampermonkey.net/
-// @version      1.6.0
+// @version      1.5.0
 // @description  UI zur Verwaltung von excludeWords und excludeMerchantIDs mit Backup und Restore
 // @author       Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister), Flo (https://www.mydealz.de/profile/Basics0119)
 // @license      MIT
@@ -429,11 +429,11 @@ document.head.appendChild(fontAwesomeLink);
         <h4 style="margin-bottom: 10px;">Einstellungen zum Ausblenden</h4>
         <div style="margin-bottom: 15px;">
             <label for="excludeWordsInput" style="font-weight: bold;">Schlagworte</label>
-            <textarea id="excludeWordsInput" rows="5" style="width: 100%; margin-top: 5px; padding: 5px; border: 1px solid #ccc; border-radius: 3px; background: #f0f0f0;">${currentExcludeWords.join('\n')}</textarea>
+            <textarea id="excludeWordsInput" rows="2" style="width: 80%; margin-top: 5px; padding: 5px; border: 1px solid #ccc; border-radius: 3px; background: #f0f0f0;">${currentExcludeWords.join('\n')}</textarea>
         </div>
         <div style="margin-bottom: 15px;">
             <label for="excludeMerchantIDsInput" style="font-weight: bold;">Händler IDs</label>
-            <textarea id="excludeMerchantIDsInput" rows="3" style="width: 100%; margin-top: 5px; padding: 5px; border: 1px solid #ccc; border-radius: 3px; background: #f0f0f0;">${currentExcludeMerchantIDs.join('\n')}</textarea>
+            <textarea id="excludeMerchantIDsInput" rows="2" style="width: 100%; margin-top: 5px; padding: 5px; border: 1px solid #ccc; border-radius: 3px; background: #f0f0f0;">${currentExcludeMerchantIDs.join('\n')}</textarea>
         </div>
         <div style="margin-bottom: 15px;">
             <label for="geizfaktorInput" style="font-weight: bold;">Geizfaktor</label>
