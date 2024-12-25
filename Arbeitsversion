@@ -273,16 +273,6 @@
                 hideDeal(deal);
             });
 
-            const settingsButton = document.createElement('button');
-            settingsButton.innerHTML = '⚙️';
-            settingsButton.style.padding = '10px';
-            settingsButton.style.background = '#2196F3';
-            settingsButton.style.color = 'white';
-            settingsButton.style.border = 'none';
-            settingsButton.style.borderRadius = '5px';
-            settingsButton.style.cursor = 'pointer';
-            settingsButton.addEventListener('click', createSettingsUI);
-
             const parentElement = deal.querySelector('.flex.boxAlign-ai--all-c.boxAlign-jc--all-sb.space--b-3.space--fromW3-b-2');
             if (parentElement) {
                 parentElement.insertBefore(hideButton, parentElement.children[1]);
@@ -290,6 +280,25 @@
             }
         });
     }
+
+    // UI-Button zum Öffnen der Einstellungen wird nur einmal erstellt
+    const settingsButton = document.createElement('button');
+    settingsButton.innerHTML = '⚙️';
+    settingsButton.style.padding = '10px';
+    settingsButton.style.background = 'transparent'; // Hintergrund transparent machen
+    settingsButton.style.color = 'white';
+    settingsButton.style.border = 'none';
+    settingsButton.style.borderRadius = '5px';
+    settingsButton.style.cursor = 'pointer';
+
+    // Event-Listener für den neuen Settings-Button
+    document.addEventListener('click', function(event) {
+        if (event.target && event.target.innerHTML === '⚙️') {
+            createSettingsUI();
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', addHideButtons);
 
     function processArticles() {
         const articles = document.querySelectorAll('article.thread--deal');
@@ -516,7 +525,7 @@
     const settingsButton = document.createElement('button');
     settingsButton.innerHTML = '⚙️';
     settingsButton.style.padding = '10px';
-    settingsButton.style.background = '#2196F3';
+    settingsButton.style.background = 'transparent'; // Hintergrund transparent machen
     settingsButton.style.color = 'white';
     settingsButton.style.border = 'none';
     settingsButton.style.borderRadius = '5px';
