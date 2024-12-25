@@ -291,6 +291,19 @@
     settingsButton.style.borderRadius = '5px';
     settingsButton.style.cursor = 'pointer';
 
+    // Füge den Button in jedes Dealfenster ein, rechts neben den 'Deal verbergen'-Button
+    function addSettingsButton() {
+        const deals = document.querySelectorAll('article.thread--deal');
+        deals.forEach(deal => {
+            const hideButton = deal.querySelector('button[title="Deal verbergen"]');
+            if (hideButton) {
+                hideButton.insertAdjacentElement('afterend', settingsButton.cloneNode(true));
+            }
+        });
+    }
+
+    settingsButton.addEventListener('click', createSettingsUI);
+
     // Event-Listener für den neuen Settings-Button
     document.addEventListener('click', function(event) {
         if (event.target && event.target.innerHTML === '⚙️') {
@@ -520,38 +533,6 @@
         settingsDiv.remove();
     });
 }
-
-    // UI-Button zum Öffnen der Einstellungen
-    const settingsButton = document.createElement('button');
-    settingsButton.innerHTML = '⚙️';
-    settingsButton.style.padding = '10px';
-    settingsButton.style.background = 'transparent'; // Hintergrund transparent machen
-    settingsButton.style.color = 'white';
-    settingsButton.style.border = 'none';
-    settingsButton.style.borderRadius = '5px';
-    settingsButton.style.cursor = 'pointer';
-
-    // Füge den Button in jedes Dealfenster ein, rechts neben den 'Deal verbergen'-Button
-    function addSettingsButton() {
-        const deals = document.querySelectorAll('article.thread--deal');
-        deals.forEach(deal => {
-            const hideButton = deal.querySelector('button[title="Deal verbergen"]');
-            if (hideButton) {
-                hideButton.insertAdjacentElement('afterend', settingsButton.cloneNode(true));
-            }
-        });
-    }
-
-    // Event-Listener für den neuen Settings-Button
-    document.addEventListener('click', function(event) {
-        if (event.target && event.target.innerHTML === '⚙️') {
-            createSettingsUI();
-        }
-    });
-
-    document.addEventListener('DOMContentLoaded', addSettingsButton);
-
-    settingsButton.addEventListener('click', createSettingsUI);
 
     // Überprüft Deals und blendet sie aus
     processArticles();
