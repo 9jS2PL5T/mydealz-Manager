@@ -261,8 +261,20 @@ document.head.appendChild(fontAwesomeLink);
     settingsButton.style.border = 'none';
     settingsButton.style.borderRadius = '5px';
     settingsButton.style.cursor = 'pointer';
+    document.body.appendChild(settingsButton);
 
-    // UI-Button zum Verbergen der Deals wird nur einmal erstellt
+    settingsButton.addEventListener('click', () => {
+        if (isSettingsOpen) {
+            // Schließe die Einstellungen, wenn sie offen sind
+            settingsDiv.remove();
+            isSettingsOpen = false;
+        } else {
+            // Öffne die Einstellungen, wenn sie geschlossen sind
+            createSettingsUI();
+        }
+    });
+
+    // UI-Button zum Verbergen der Deals
     const hideButton = document.createElement('button');
     hideButton.innerHTML = '❌';
     hideButton.style.marginLeft = '10px';
@@ -549,7 +561,7 @@ document.head.appendChild(fontAwesomeLink);
 
         });
 
-    document.getElementById('createBackupButton').addEventListener('click', backupData);
+            document.getElementById('createBackupButton').addEventListener('click', backupData);
 
     document.getElementById('restoreBackupButton').addEventListener('click', () => {
         document.getElementById('restoreFileInput').click();
@@ -561,7 +573,7 @@ document.head.appendChild(fontAwesomeLink);
         isSettingsOpen = false;
         settingsDiv.remove();
     });
-}
+        }
 
     // Überprüft Deals und blendet sie aus
     processArticles();
