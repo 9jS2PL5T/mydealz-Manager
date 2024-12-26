@@ -348,79 +348,6 @@ document.head.appendChild(fontAwesomeLink);
     }
 
     // --- 2. Hilfsfunktionen ---
-    function shouldExcludeArticle(article) {
-        const titleElement = article.querySelector('.thread-title');
-        const merchantLinks = article.querySelectorAll('a[href*="merchant-id="], a[href*="merchant-id%3D"]');
-        const dataHistory = article.getAttribute('data-history');
-        const dataOcular = article.getAttribute('data-ocular');
-        const dataT = article.getAttribute('data-t');
-
-        console.log('Überprüfe Artikel:', article);
-
-        // Überprüfe auf Schlagworte im Titel
-        if (titleElement && excludeWords.some(word => titleElement.textContent.toLowerCase().includes(word.toLowerCase()))) {
-            console.log('Artikel aufgrund von Schlagworten ausgeschlossen:', titleElement.textContent);
-            return true;
-        }
-
-        // Überprüfe auf Händler-ID im Link
-        for (const merchantLink of merchantLinks) {
-            const href = merchantLink.getAttribute('href');
-            if (href) {
-                const merchantIDMatch = href.match(/merchant-id=(\d+)/) || href.match(/merchant-id%3D(\d+)/);
-                if (merchantIDMatch) {
-                    const merchantID = merchantIDMatch[1];
-                    console.log('Gefundene Händler-ID im Link:', merchantID);
-                    if (excludeMerchantIDs.includes(merchantID)) {
-                        console.log('Artikel aufgrund von Händler-ID im Link ausgeschlossen:', merchantID);
-                        return true;
-                    }
-                }
-            }
-        }
-
-        // Überprüfe auf Händler-ID im data-history Attribut
-        if (dataHistory) {
-            const dataHistoryMatch = dataHistory.match(/merchant-id=(\d+)/) || dataHistory.match(/merchant-id%3D(\d+)/);
-            if (dataHistoryMatch) {
-                const merchantID = dataHistoryMatch[1];
-                console.log('Gefundene Händler-ID im data-history:', merchantID);
-                if (excludeMerchantIDs.includes(merchantID)) {
-                    console.log('Artikel aufgrund von Händler-ID im data-history ausgeschlossen:', merchantID);
-                    return true;
-                }
-            }
-        }
-
-        // Überprüfe auf Händler-ID im data-ocular Attribut
-        if (dataOcular) {
-            const dataOcularMatch = dataOcular.match(/merchant-id=(\d+)/) || dataOcular.match(/merchant-id%3D(\d+)/);
-            if (dataOcularMatch) {
-                const merchantID = dataOcularMatch[1];
-                console.log('Gefundene Händler-ID im data-ocular:', merchantID);
-                if (excludeMerchantIDs.includes(merchantID)) {
-                    console.log('Artikel aufgrund von Händler-ID im data-ocular ausgeschlossen:', merchantID);
-                    return true;
-                }
-            }
-        }
-
-        // Überprüfe auf Händler-ID im data-t Attribut
-        if (dataT) {
-            const dataTMatch = dataT.match(/merchant-id=(\d+)/) || dataT.match(/merchant-id%3D(\d+)/);
-            if (dataTMatch) {
-                const merchantID = dataTMatch[1];
-                console.log('Gefundene Händler-ID im data-t:', merchantID);
-                if (excludeMerchantIDs.includes(merchantID)) {
-                    console.log('Artikel aufgrund von Händler-ID im data-t ausgeschlossen:', merchantID);
-                    return true;
-                }
-            }
-        }
-
-        console.log('Artikel nicht ausgeschlossen:', article);
-        return false;
-    }
 
     // Färbt den Deal entsprechend den festgelegten Kategorien
     function colorDeal(deal) {
@@ -451,11 +378,6 @@ document.head.appendChild(fontAwesomeLink);
         } else if (highlightHotness && hotness < HOTNESS_LIMIT) {
             deal.classList.add('hotness');
         }
-    }
-
-    function hideDeal(deal) {
-        console.log('Verberge Artikel:', deal); // Debugging-Ausgabe
-        deal.style.display = 'none';
     }
 
     // UI-Button zum Öffnen der Einstellungen wird nur einmal erstellt
@@ -539,29 +461,6 @@ document.head.appendChild(fontAwesomeLink);
     });
 
     document.addEventListener('DOMContentLoaded', addHideButtons);
-
-    function processArticles() {
-        const articles = document.querySelectorAll('article.thread--deal');
-        console.log('Anzahl der Artikel:', articles.length);
-
-        articles.forEach(article => {
-            if (shouldExcludeArticle(article)) {
-                hideDeal(article);
-            } else {
-                console.log('Artikel wird angezeigt:', article);
-                article.style.display = 'block'; // Transparenz zurücksetzen
-                article.style.opacity = '1';
-            }
-        });
-
-        applyHighlighting(); // Highlighting separat anwenden
-        addHideButtons(); // Hide Buttons hinzufügen
-    }
-
-    console.log("processArticles Funktion definiert.");
-
-    // Automatisches Ausführen der `processArticles` Funktion beim Laden der Seite
-    document.addEventListener('DOMContentLoaded', processArticles);
 
     // --- 3. Backup- und Restore-Funktionen ---
     function backupData() {
