@@ -22,16 +22,29 @@ fontAwesomeLink.rel = 'stylesheet';
 fontAwesomeLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css';
 document.head.appendChild(fontAwesomeLink);
 
+// ==UserScript==
+// @name         mydealz Script Beta Arbeitsversion
+// @namespace    http://tampermonkey.net/
+// @version      1.6.0
+// @description  UI zur Verwaltung von excludeWords und excludeMerchantIDs mit Backup und Restore
+// @author       Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister), Flo (https://www.mydealz.de/profile/Basics0119)
+// @license      MIT
+// @match        https://www.mydealz.de/*
+// @grant        none
+// ==/UserScript==
+
 (function() {
     'use strict';
 
-        // Funktion zum Suchen von Deals nach ID
+    console.log("Skript wird geladen...");
+
+    // Funktion zum Suchen von Deals nach ID
     function findDealById(dealId) {
         const deals = document.querySelectorAll('article.thread--deal');
         const matchingDeals = [];
 
         deals.forEach(deal => {
-            if (deal.id.includes(dealId)) {
+            if (deal.id === `thread_${dealId}`) {
                 matchingDeals.push(deal);
             }
         });
@@ -44,6 +57,121 @@ document.head.appendChild(fontAwesomeLink);
 
         return matchingDeals;
     }
+
+    // Hinzufügen der Funktion zum globalen Objekt
+    window.findDealById = findDealById;
+
+    console.log("findDealById Funktion definiert und zum globalen Objekt hinzugefügt.");
+
+    // --- Rest des Skripts ---
+
+    // Funktion zum Überprüfen, ob ein Artikel ausgeschlossen werden soll
+    function shouldExcludeArticle(article) {
+        const titleElement = article.querySelector('.thread-title');
+        const merchantLinks = article.querySelectorAll('a[href*="merchant-id="], a[href*="merchant-id%3D"]');
+        const dataHistory = article.getAttribute('data-history');
+        const dataOcular = article.getAttribute('data-ocular');
+        const dataT = article.getAttribute('data-t');
+
+        console.log('Überprüfe Artikel:', article);
+
+        // Überprüfe auf Schlagworte im Titel
+        if (titleElement && excludeWords.some(word => titleElement.textContent.toLowerCase().includes(word.toLowerCase()))) {
+            console.log('Artikel aufgrund von Schlagworten ausgeschlossen:', titleElement.textContent);
+            return true;
+        }
+
+        // Überprüfe auf Händler-ID im Link
+        for (const merchantLink of merchantLinks) {
+            const href = merchantLink.getAttribute('href');
+            if (href) {
+                const merchantIDMatch = href.match(/merchant-id=(\d+)/) || href.match(/merchant-id%3D(\d+)/);
+                if (merchantIDMatch) {
+                    const merchantID = merchantIDMatch[1];
+                    console.log('Gefundene Händler-ID im Link:', merchantID);
+                    if (excludeMerchantIDs.includes(merchantID)) {
+                        console.log('Artikel aufgrund von Händler-ID im Link ausgeschlossen:', merchantID);
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Überprüfe auf Händler-ID im data-history Attribut
+        if (dataHistory) {
+            const dataHistoryMatch = dataHistory.match(/merchant-id=(\d+)/) || dataHistory.match(/merchant-id%3D(\d+)/);
+            if (dataHistoryMatch) {
+                const merchantID = dataHistoryMatch[1];
+                console.log('Gefundene Händler-ID im data-history:', merchantID);
+                if (excludeMerchantIDs.includes(merchantID)) {
+                    console.log('Artikel aufgrund von Händler-ID im data-history ausgeschlossen:', merchantID);
+                    return true;
+                }
+            }
+        }
+
+        // Überprüfe auf Händler-ID im data-ocular Attribut
+        if (dataOcular) {
+            const dataOcularMatch = dataOcular.match(/merchant-id=(\d+)/) || dataOcular.match(/merchant-id%3D(\d+)/);
+            if (dataOcularMatch) {
+                const merchantID = dataOcularMatch[1];
+                console.log('Gefundene Händler-ID im data-ocular:', merchantID);
+                if (excludeMerchantIDs.includes(merchantID)) {
+                    console.log('Artikel aufgrund von Händler-ID im data-ocular ausgeschlossen:', merchantID);
+                    return true;
+                }
+            }
+        }
+
+        // Überprüfe auf Händler-ID im data-t Attribut
+        if (dataT) {
+            const dataTMatch = dataT.match(/merchant-id=(\d+)/) || dataT.match(/merchant-id%3D(\d+)/);
+            if (dataTMatch) {
+                const merchantID = dataTMatch[1];
+                console.log('Gefundene Händler-ID im data-t:', merchantID);
+                if (excludeMerchantIDs.includes(merchantID)) {
+                    console.log('Artikel aufgrund von Händler-ID im data-t ausgeschlossen:', merchantID);
+                    return true;
+                }
+            }
+        }
+
+        console.log('Artikel nicht ausgeschlossen:', article);
+        return false;
+    }
+
+    console.log("shouldExcludeArticle Funktion definiert.");
+
+    function hideDeal(deal) {
+        console.log('Verberge Artikel:', deal); // Debugging-Ausgabe
+        deal.style.display = 'none';
+    }
+
+    function processArticles() {
+        const articles = document.querySelectorAll('article.thread--deal');
+        console.log('Anzahl der Artikel:', articles.length);
+
+        articles.forEach(article => {
+            if (shouldExcludeArticle(article)) {
+                hideDeal(article);
+            } else {
+                console.log('Artikel wird angezeigt:', article);
+                article.style.display = 'block'; // Transparenz zurücksetzen
+                article.style.opacity = '1';
+            }
+        });
+
+        applyHighlighting(); // Highlighting separat anwenden
+        addHideButtons(); // Hide Buttons hinzufügen
+    }
+
+    console.log("processArticles Funktion definiert.");
+
+    // Automatisches Ausführen der `processArticles` Funktion beim Laden der Seite
+    document.addEventListener('DOMContentLoaded', processArticles);
+
+    console.log("Event Listener für DOMContentLoaded hinzugefügt.");
+    console.log("Skript vollständig geladen.");
 
     // --- 1. Konfiguration ---
     const EXCLUDE_WORDS_KEY = 'excludeWords';
@@ -294,6 +422,8 @@ document.head.appendChild(fontAwesomeLink);
         return false;
     }
 
+    console.log("shouldExcludeArticle Funktion definiert.");
+
     // Färbt den Deal entsprechend den festgelegten Kategorien
     function colorDeal(deal) {
         const priceElement = deal.querySelector('.threadItemCard-price');
@@ -324,6 +454,8 @@ document.head.appendChild(fontAwesomeLink);
             deal.classList.add('hotness');
         }
     }
+
+    console.log("shouldExcludeArticle Funktion definiert.");
 
     function hideDeal(deal) {
         console.log('Verberge Artikel:', deal); // Debugging-Ausgabe
@@ -429,6 +561,11 @@ document.head.appendChild(fontAwesomeLink);
         applyHighlighting(); // Highlighting separat anwenden
         addHideButtons(); // Hide Buttons hinzufügen
     }
+
+    console.log("processArticles Funktion definiert.");
+
+    // Automatisches Ausführen der `processArticles` Funktion beim Laden der Seite
+    document.addEventListener('DOMContentLoaded', processArticles);
 
     // --- 3. Backup- und Restore-Funktionen ---
     function backupData() {
@@ -658,5 +795,5 @@ document.head.appendChild(fontAwesomeLink);
         childList: true,
         subtree: true
     });
-
+console.log("Skript vollständig geladen.");
 })();
