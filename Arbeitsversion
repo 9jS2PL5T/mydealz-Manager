@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         mydealz Script Beta
+// @name         mydealz Script Beta Arbeitsversion
 // @namespace    http://tampermonkey.net/
-// @version      1.5.0
+// @version      1.6.0
 // @description  UI zur Verwaltung von excludeWords und excludeMerchantIDs mit Backup und Restore
 // @author       Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister), Flo (https://www.mydealz.de/profile/Basics0119)
 // @license      MIT
@@ -226,9 +226,13 @@ document.head.appendChild(fontAwesomeLink);
         const priceElement = deal.querySelector('.threadItemCard-price');
         const hotnessElement = deal.querySelector('.hotness');
 
-        let price = 0;
+        let price = null; // Standard auf null setzen
         if (priceElement) {
-            price = parseFloat(priceElement.textContent.replace(/[^\d.,-]/g, '').replace(',', '.'));
+            // Parse den Preis nur, wenn ein Preis vorhanden ist
+            const priceText = priceElement.textContent.replace(/[^\d.,-]/g, '').replace(',', '.');
+            if (priceText) {
+                price = parseFloat(priceText);
+            }
         }
 
         let hotness = parseInt(hotnessElement ? hotnessElement.textContent : 0);
@@ -238,10 +242,10 @@ document.head.appendChild(fontAwesomeLink);
         const highlightMaximalpreis = JSON.parse(localStorage.getItem('highlightMaximalpreis')) || true;
         const highlightHotness = JSON.parse(localStorage.getItem('highlightHotness')) || true;
 
-        // Wende das Highlighting nur an, wenn es aktiviert ist
-        if (highlightGeizfaktor && price < GEIZFAKTOR_LIMIT) {
+        // Wende das Highlighting nur an, wenn es aktiviert ist und der Preis vorhanden ist
+        if (highlightGeizfaktor && price !== null && price < GEIZFAKTOR_LIMIT) {
             deal.classList.add('geizfaktor');
-        } else if (highlightMaximalpreis && price > MAXIMALPREIS_LIMIT) {
+        } else if (highlightMaximalpreis && price !== null && price > MAXIMALPREIS_LIMIT) {
             deal.classList.add('maximalpreis');
         } else if (highlightHotness && hotness < HOTNESS_LIMIT) {
             deal.classList.add('hotness');
