@@ -644,7 +644,7 @@ document.head.appendChild(fontAwesomeLink);
         settingsDiv.style.maxWidth = '300px';
         settingsDiv.style.overflow = 'auto';
 
-    settingsDiv.innerHTML = `
+        settingsDiv.innerHTML = `
         <h4 style="margin-bottom: 10px;">Einstellungen zum Ausblenden</h4>
         <div style="margin-bottom: 15px;">
             <label for="excludeWordsInput" style="font-weight: bold;">Schlagworte</label>
@@ -768,19 +768,19 @@ document.head.appendChild(fontAwesomeLink);
 
         });
 
-    document.getElementById('createBackupButton').addEventListener('click', backupData);
+        document.getElementById('createBackupButton').addEventListener('click', backupData);
 
-    document.getElementById('restoreBackupButton').addEventListener('click', () => {
-        document.getElementById('restoreFileInput').click();
-    });
+        document.getElementById('restoreBackupButton').addEventListener('click', () => {
+            document.getElementById('restoreFileInput').click();
+        });
 
-    document.getElementById('restoreFileInput').addEventListener('change', restoreData);
+        document.getElementById('restoreFileInput').addEventListener('change', restoreData);
 
-    document.getElementById('closeSettingsButton').addEventListener('click', () => {
-        isSettingsOpen = false;
-        settingsDiv.remove();
-    });
-}
+        document.getElementById('closeSettingsButton').addEventListener('click', () => {
+            isSettingsOpen = false;
+            settingsDiv.remove();
+        });
+    }
 
     // Überprüft Deals und blendet sie aus
     processArticles();
@@ -795,5 +795,5 @@ document.head.appendChild(fontAwesomeLink);
         childList: true,
         subtree: true
     });
-console.log("Skript vollständig geladen.");
+    console.log("Skript vollständig geladen.");
 })();
