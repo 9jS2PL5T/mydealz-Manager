@@ -25,6 +25,26 @@ document.head.appendChild(fontAwesomeLink);
 (function() {
     'use strict';
 
+        // Funktion zum Suchen von Deals nach ID
+    function findDealById(dealId) {
+        const deals = document.querySelectorAll('article.thread--deal');
+        const matchingDeals = [];
+
+        deals.forEach(deal => {
+            if (deal.id.includes(dealId)) {
+                matchingDeals.push(deal);
+            }
+        });
+
+        if (matchingDeals.length > 0) {
+            console.log(`Gefundene Deals mit ID ${dealId}:`, matchingDeals);
+        } else {
+            console.log(`Keine Deals mit ID ${dealId} gefunden.`);
+        }
+
+        return matchingDeals;
+    }
+
     // --- 1. Konfiguration ---
     const EXCLUDE_WORDS_KEY = 'excludeWords';
     const EXCLUDE_MERCHANTS_KEY = 'excludeMerchantIDs';
@@ -207,30 +227,38 @@ document.head.appendChild(fontAwesomeLink);
         const dataOcular = article.getAttribute('data-ocular');
         const dataT = article.getAttribute('data-t');
 
+        console.log('Überprüfe Artikel:', article);
+
         // Überprüfe auf Schlagworte im Titel
         if (titleElement && excludeWords.some(word => titleElement.textContent.toLowerCase().includes(word.toLowerCase()))) {
+            console.log('Artikel aufgrund von Schlagworten ausgeschlossen:', titleElement.textContent);
             return true;
         }
 
         // Überprüfe auf Händler-ID im Link
         for (const merchantLink of merchantLinks) {
-            const merchantIDMatch = merchantLink.getAttribute('href').match(/merchant-id=(\d+)/) ||
-                                    merchantLink.getAttribute('href').match(/merchant-id%3D(\d+)/);
-            if (merchantIDMatch) {
-                const merchantID = merchantIDMatch[1];
-                if (excludeMerchantIDs.includes(merchantID)) {
-                    return true;
+            const href = merchantLink.getAttribute('href');
+            if (href) {
+                const merchantIDMatch = href.match(/merchant-id=(\d+)/) || href.match(/merchant-id%3D(\d+)/);
+                if (merchantIDMatch) {
+                    const merchantID = merchantIDMatch[1];
+                    console.log('Gefundene Händler-ID im Link:', merchantID);
+                    if (excludeMerchantIDs.includes(merchantID)) {
+                        console.log('Artikel aufgrund von Händler-ID im Link ausgeschlossen:', merchantID);
+                        return true;
+                    }
                 }
             }
         }
 
         // Überprüfe auf Händler-ID im data-history Attribut
         if (dataHistory) {
-            const dataHistoryMatch = dataHistory.match(/merchant-id=(\d+)/) ||
-                                     dataHistory.match(/merchant-id%3D(\d+)/);
+            const dataHistoryMatch = dataHistory.match(/merchant-id=(\d+)/) || dataHistory.match(/merchant-id%3D(\d+)/);
             if (dataHistoryMatch) {
                 const merchantID = dataHistoryMatch[1];
+                console.log('Gefundene Händler-ID im data-history:', merchantID);
                 if (excludeMerchantIDs.includes(merchantID)) {
+                    console.log('Artikel aufgrund von Händler-ID im data-history ausgeschlossen:', merchantID);
                     return true;
                 }
             }
@@ -238,11 +266,12 @@ document.head.appendChild(fontAwesomeLink);
 
         // Überprüfe auf Händler-ID im data-ocular Attribut
         if (dataOcular) {
-            const dataOcularMatch = dataOcular.match(/merchant-id=(\d+)/) ||
-                                    dataOcular.match(/merchant-id%3D(\d+)/);
+            const dataOcularMatch = dataOcular.match(/merchant-id=(\d+)/) || dataOcular.match(/merchant-id%3D(\d+)/);
             if (dataOcularMatch) {
                 const merchantID = dataOcularMatch[1];
+                console.log('Gefundene Händler-ID im data-ocular:', merchantID);
                 if (excludeMerchantIDs.includes(merchantID)) {
+                    console.log('Artikel aufgrund von Händler-ID im data-ocular ausgeschlossen:', merchantID);
                     return true;
                 }
             }
@@ -250,16 +279,18 @@ document.head.appendChild(fontAwesomeLink);
 
         // Überprüfe auf Händler-ID im data-t Attribut
         if (dataT) {
-            const dataTMatch = dataT.match(/merchant-id=(\d+)/) ||
-                               dataT.match(/merchant-id%3D(\d+)/);
+            const dataTMatch = dataT.match(/merchant-id=(\d+)/) || dataT.match(/merchant-id%3D(\d+)/);
             if (dataTMatch) {
                 const merchantID = dataTMatch[1];
+                console.log('Gefundene Händler-ID im data-t:', merchantID);
                 if (excludeMerchantIDs.includes(merchantID)) {
+                    console.log('Artikel aufgrund von Händler-ID im data-t ausgeschlossen:', merchantID);
                     return true;
                 }
             }
         }
 
+        console.log('Artikel nicht ausgeschlossen:', article);
         return false;
     }
 
@@ -295,6 +326,7 @@ document.head.appendChild(fontAwesomeLink);
     }
 
     function hideDeal(deal) {
+        console.log('Verberge Artikel:', deal); // Debugging-Ausgabe
         deal.style.display = 'none';
     }
 
@@ -333,6 +365,7 @@ document.head.appendChild(fontAwesomeLink);
 
     function addHideButtons() {
         const deals = document.querySelectorAll('article:not([data-button-added])');
+        console.log('Füge Verberge-Buttons hinzu. Anzahl der Deals:', deals.length);
 
         deals.forEach(deal => {
             let dealId = deal.getAttribute('id');
@@ -381,17 +414,20 @@ document.head.appendChild(fontAwesomeLink);
 
     function processArticles() {
         const articles = document.querySelectorAll('article.thread--deal');
+        console.log('Anzahl der Artikel:', articles.length);
+
         articles.forEach(article => {
             if (shouldExcludeArticle(article)) {
                 hideDeal(article);
             } else {
-                article.style.display = 'block';
-                article.style.opacity = '1'; // Transparenz zurücksetzen
-                // Färbe den Deal basierend auf den Kategorien
-                colorDeal(article);
+                console.log('Artikel wird angezeigt:', article);
+                article.style.display = 'block'; // Transparenz zurücksetzen
+                article.style.opacity = '1';
             }
         });
-        addHideButtons();
+
+        applyHighlighting(); // Highlighting separat anwenden
+        addHideButtons(); // Hide Buttons hinzufügen
     }
 
     // --- 3. Backup- und Restore-Funktionen ---
@@ -614,6 +650,7 @@ document.head.appendChild(fontAwesomeLink);
 
     // --- MutationObserver für dynamisch geladene Artikel ---
     const observer = new MutationObserver(() => {
+        console.log('DOM verändert, verarbeite Artikel erneut'); // Debugging-Ausgabe
         processArticles(); // Nach Änderungen DOM erneut überprüfen
     });
 
