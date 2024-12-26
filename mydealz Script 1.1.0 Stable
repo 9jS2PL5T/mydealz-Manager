@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         mydealz Script
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.1.0-stable
 // @description  Funktionen zum Hervorheben, Ausblenden und Verwalten von Deals auf mydealz.de
 // @author       Moritz Baumeister, Flo
 // @license      MIT
