@@ -422,8 +422,6 @@ document.head.appendChild(fontAwesomeLink);
         return false;
     }
 
-    console.log("shouldExcludeArticle Funktion definiert.");
-
     // Färbt den Deal entsprechend den festgelegten Kategorien
     function colorDeal(deal) {
         const priceElement = deal.querySelector('.threadItemCard-price');
@@ -454,8 +452,6 @@ document.head.appendChild(fontAwesomeLink);
             deal.classList.add('hotness');
         }
     }
-
-    console.log("shouldExcludeArticle Funktion definiert.");
 
     function hideDeal(deal) {
         console.log('Verberge Artikel:', deal); // Debugging-Ausgabe
