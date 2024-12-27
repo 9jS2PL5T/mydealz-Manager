@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         mydealz Script Beta Arbeitsversion
+// @name         mydealz Script Beta
 // @namespace    http://tampermonkey.net/
 // @version      1.5.1
 // @description  UI zur Verwaltung von excludeWords und excludeMerchantIDs mit Backup und Restore
