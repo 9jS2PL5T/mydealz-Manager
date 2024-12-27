@@ -11,12 +11,7 @@
 // ==/UserScript==
 
 // Versions-Änderungen:
-// 1.5.1:
-- Behoben: Händler-ID-basiertes Ausblenden von Deals funktioniert jetzt korrekt
-- Hinzugefügt: Unterstützung für Gutscheinartikel beim Ausblenden von Deals
-- Hinzugefügt: Verbesserte HTML-Entitätsbehandlung im Datenverlauf
-- Behoben: Zuverlässigkeit der Händlerlink-Erkennung
-- Behoben: Probleme mit maskiertem JSON im Datenverlaufsattribut
+// 1.5.1: Behoben: Händler-ID-basiertes Ausblenden von Deals funktioniert jetzt korrekt. Hinzugefügt: Unterstützung für Gutscheinartikel beim Ausblenden von Deals. Hinzugefügt: Verbesserte HTML-Entitätsbehandlung im Datenverlauf. Behoben: Zuverlässigkeit der Händlerlink-Erkennung. Behoben: Probleme mit maskiertem JSON im Datenverlaufsattribut.
 // 1.4.0: Überarbeitete Benutzeroberfläche für die Exclude-Einstellungen mit sinnvoller Button-Anordnung, verbesserte Funktionalität für Backup und Wiederherstellen, Schließen des Einstellungsfensters ohne automatisch zu schließen und verbesserte Darstellung des Dateiuploads für das Wiederherstellen.
 // 1.3.0: Hinzugefügt: Backup- und Restore-Funktionen für excludeWords und excludeMerchantIDs. UI wird nach Wiederherstellung automatisch aktualisiert. Neue Buttons zum Erstellen und Wiederherstellen von Backups im Einstellungsfenster.
 // 1.2.0: excludeWords und excludeMerchantIDs in localStorage ausgelagert, um Daten bei Updates zu erhalten. Hinzugefügt: Benutzeroberfläche (UI) zur Bearbeitung von excludeWords und excludeMerchantIDs direkt auf der Website. Hinzugefügt: Backup und Restore der Daten.
