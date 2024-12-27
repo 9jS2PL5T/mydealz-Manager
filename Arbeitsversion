@@ -176,6 +176,9 @@ const HIGHLIGHT_HOTNESS_KEY = 'highlightHotness';
     let excludeMerchantIDs = JSON.parse(localStorage.getItem(EXCLUDE_MERCHANTS_KEY)) || [];
     let hiddenDeals = JSON.parse(localStorage.getItem(HIDDEN_DEALS_KEY)) || [];
 
+    // Debugging-Ausgabe zum Überprüfen der excludeMerchantIDs
+    console.log('Aktuelle excludeMerchantIDs:', excludeMerchantIDs);
+
     // Funktion zum Anwenden des Highlightings je nach Checkbox-Zustand
     function applyHighlighting() {
         const highlightGeizfaktor = loadGeizfaktorCheckboxState();
@@ -516,9 +519,9 @@ const HIGHLIGHT_HOTNESS_KEY = 'highlightHotness';
 
         const currentExcludeWords = JSON.parse(localStorage.getItem(EXCLUDE_WORDS_KEY)) || [];
         const currentExcludeMerchantIDs = JSON.parse(localStorage.getItem(EXCLUDE_MERCHANTS_KEY)) || [];
-        const highlightGeizfaktor = JSON.parse(localStorage.getItem('highlightGeizfaktor')) || true;
-        const highlightMaximalpreis = JSON.parse(localStorage.getItem('highlightMaximalpreis')) || true;
-        const highlightHotness = JSON.parse(localStorage.getItem('highlightHotness')) || true;
+        let highlightGeizfaktor = JSON.parse(localStorage.getItem('highlightGeizfaktor')) || true;
+        let highlightMaximalpreis = JSON.parse(localStorage.getItem('highlightMaximalpreis')) || true;
+        let highlightHotness = JSON.parse(localStorage.getItem('highlightHotness')) || true;
 
         settingsDiv = document.createElement('div');
         settingsDiv.style.position = 'fixed';
@@ -587,9 +590,9 @@ const HIGHLIGHT_HOTNESS_KEY = 'highlightHotness';
 
         updateInputVisibility(); // Initialen Zustand setzen (DIESE ZEILE HINZUFÜGEN!)
 
-        const highlightGeizfaktorCheckbox = document.getElementById('highlightGeizfaktor');
-        const highlightMaximalpreisCheckbox = document.getElementById('highlightMaximalpreis');
-        const highlightHotnessCheckbox = document.getElementById('highlightHotness');
+        let highlightGeizfaktorCheckbox = document.getElementById('highlightGeizfaktor');
+        let highlightMaximalpreisCheckbox = document.getElementById('highlightMaximalpreis');
+        let highlightHotnessCheckbox = document.getElementById('highlightHotness');
 
         if (highlightGeizfaktorCheckbox) {
             highlightGeizfaktorCheckbox.addEventListener('change', (e) => {
