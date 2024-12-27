@@ -37,6 +37,7 @@ const HIGHLIGHT_HOTNESS_KEY = 'highlightHotness';
         const matchingDeals = [];
 
         deals.forEach(deal => {
+            console.log(`Überprüfe Deal ID: ${deal.id}, Gesucht: thread_${dealId}`);
             if (deal.id === `thread_${dealId}`) {
                 matchingDeals.push(deal);
             }
@@ -49,6 +50,19 @@ const HIGHLIGHT_HOTNESS_KEY = 'highlightHotness';
         }
 
         return matchingDeals;
+    }
+
+    // Beispielaufruf der Funktion
+    const dealId = '2495023';
+    const foundDeals = findDealById(dealId);
+
+    if (foundDeals.length > 0) {
+        foundDeals.forEach(deal => {
+            // Fügen Sie hier die Logik zum Ausblenden des Deals hinzu
+            hideDeal(deal);
+        });
+    } else {
+        console.log(`Keine Deals mit ID ${dealId} gefunden.`);
     }
 
     // Hinzufügen der Funktion zum globalen Objekt
@@ -135,6 +149,7 @@ const HIGHLIGHT_HOTNESS_KEY = 'highlightHotness';
 
     console.log("shouldExcludeArticle Funktion definiert.");
 
+    // Funktion zum Verbergen eines Deals
     function hideDeal(deal) {
         console.log('Verberge Artikel:', deal); // Debugging-Ausgabe
         deal.style.display = 'none';
@@ -453,6 +468,14 @@ const HIGHLIGHT_HOTNESS_KEY = 'highlightHotness';
     document.addEventListener('click', function(event) {
         if (event.target && event.target.innerHTML === '⚙️') {
             createSettingsUI();
+        }
+        // Überprüfen, ob das Ziel-Element existiert und ein HTMLElement ist
+        const targetElement = event.target;
+        if (targetElement && targetElement instanceof HTMLElement) {
+            // Zugriff auf dataset-Attribute
+            console.log(targetElement.dataset);
+        } else {
+            console.log('Das Ziel-Element ist nicht definiert oder kein HTMLElement.');
         }
     });
 
