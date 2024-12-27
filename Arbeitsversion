@@ -26,7 +26,7 @@ const HIGHLIGHT_GEIZFAKTOR_KEY = 'highlightGeizfaktor';
 const HIGHLIGHT_MAXIMALPREIS_KEY = 'highlightMaximalpreis';
 const HIGHLIGHT_HOTNESS_KEY = 'highlightHotness';
 
-(function() {
+document.addEventListener('DOMContentLoaded', function() {
     'use strict';
 
     console.log("Skript wird geladen...");
@@ -70,10 +70,13 @@ const HIGHLIGHT_HOTNESS_KEY = 'highlightHotness';
 
     console.log("findDealById Funktion definiert und zum globalen Objekt hinzugefügt.");
 
-    // --- Rest des Skripts ---
-
     // Funktion zum Überprüfen, ob ein Artikel ausgeschlossen werden soll
     function shouldExcludeArticle(article) {
+        if (!article) {
+            console.log('Artikel existiert nicht.');
+            return false;
+        }
+
         const titleElement = article.querySelector('.thread-title');
         const merchantLinks = article.querySelectorAll('a[href*="merchant-id="], a[href*="merchant-id%3D"]');
         const dataHistory = article.getAttribute('data-history');
@@ -160,12 +163,16 @@ const HIGHLIGHT_HOTNESS_KEY = 'highlightHotness';
         console.log('Anzahl der Artikel:', articles.length);
 
         articles.forEach(article => {
-            if (shouldExcludeArticle(article)) {
-                hideDeal(article);
+            if (article) { // Überprüfe, ob das Element existiert
+                if (shouldExcludeArticle(article)) {
+                    hideDeal(article);
+                } else {
+                    console.log('Artikel wird angezeigt:', article);
+                    article.style.display = 'block'; // Transparenz zurücksetzen
+                    article.style.opacity = '1';
+                }
             } else {
-                console.log('Artikel wird angezeigt:', article);
-                article.style.display = 'block'; // Transparenz zurücksetzen
-                article.style.opacity = '1';
+                console.log('Artikel nicht gefunden.');
             }
         });
 
@@ -173,13 +180,30 @@ const HIGHLIGHT_HOTNESS_KEY = 'highlightHotness';
         addHideButtons(); // Hide Buttons hinzufügen
     }
 
-    console.log("processArticles Funktion definiert.");
-
     // Automatisches Ausführen der `processArticles` Funktion beim Laden der Seite
     document.addEventListener('DOMContentLoaded', processArticles);
 
+    const observer = new MutationObserver(mutations => {
+        mutations.forEach(mutation => {
+            if (mutation.addedNodes.length > 0) {
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType === Node.ELEMENT_NODE && node.matches('article.thread--deal')) {
+                        console.log('Neuer Artikel gefunden:', node);
+                        processArticles(); // Verarbeite Artikel erneut
+                    }
+                });
+            }
+        });
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
+    console.log("MutationObserver hinzugefügt.");
+    console.log("processArticles Funktion definiert.");
     console.log("Event Listener für DOMContentLoaded hinzugefügt.");
-    console.log("Skript vollständig geladen.");
 
     // --- 1. Konfiguration ---
     const EXCLUDE_WORDS_KEY = 'excludeWords';
@@ -726,16 +750,6 @@ const HIGHLIGHT_HOTNESS_KEY = 'highlightHotness';
     // Überprüft Deals und blendet sie aus
     processArticles();
 
-    // --- MutationObserver für dynamisch geladene Artikel ---
-    const observer = new MutationObserver(() => {
-        console.log('DOM verändert, verarbeite Artikel erneut'); // Debugging-Ausgabe
-        processArticles(); // Nach Änderungen DOM erneut überprüfen
-    });
-
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
     console.log("Skript vollständig geladen.");
 
     function saveToLocalStorage(key, value) {
