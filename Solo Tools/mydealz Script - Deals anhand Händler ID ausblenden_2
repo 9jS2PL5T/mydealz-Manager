@@ -1,0 +1,85 @@
+// ==UserScript==
+// @name         MyDealz Händler Deals ausblenden
+// @namespace    http://tampermonkey.net/
+// @version      1.9
+// @description  Blendet alle Deals eines bestimmten Händlers auf mydealz.de aus
+// @author       Ihr Name
+// @match        https://www.mydealz.de/*
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const merchantIdToHide = '5032';
+    const debug = true;
+
+    function shouldHideDeal(deal) {
+        // Check data-history attribute
+        const dataHistory = deal.getAttribute('data-history');
+        if (dataHistory) {
+            try {
+                const historyData = JSON.parse(dataHistory);
+                if (historyData.endpoint && historyData.endpoint.includes(`merchant-id=${merchantIdToHide}`)) {
+                    if (debug) console.log('Found merchant in data-history:', deal);
+                    return true;
+                }
+            } catch (e) {
+                console.error('Error parsing data-history:', e);
+            }
+        }
+
+        // Check all possible merchant links
+        const merchantSelectors = [
+            `a[href*="merchant-id=${merchantIdToHide}"]`,
+            `a[href*="/profile/${merchantIdToHide}"]`,
+            'a[data-t="merchantLink"]'
+        ];
+
+        for (const selector of merchantSelectors) {
+            const links = deal.querySelectorAll(selector);
+            for (const link of links) {
+                if (link.href && (
+                    link.href.includes(`merchant-id=${merchantIdToHide}`) ||
+                    link.href.includes(`/profile/${merchantIdToHide}`)
+                )) {
+                    if (debug) console.log('Found merchant in link:', deal);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    function toggleMerchantDeals() {
+        const deals = document.querySelectorAll('article.thread--deal, article.thread--voucher');
+        deals.forEach(deal => {
+            if (shouldHideDeal(deal)) {
+                deal.style.display = 'none';
+            }
+        });
+    }
+
+    // More robust MutationObserver
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            if (mutation.addedNodes.length) {
+                toggleMerchantDeals();
+                break;
+            }
+        }
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['data-history', 'href']
+    });
+
+    // Initial run
+    toggleMerchantDeals();
+
+    if (debug) console.log('Merchant hiding script initialized');
+})();
