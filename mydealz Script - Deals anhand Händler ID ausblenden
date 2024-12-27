@@ -1,0 +1,38 @@
+// ==UserScript==
+// @name         MyDealz Händler Deals ausblenden
+// @namespace    http://tampermonkey.net/
+// @version      1.2
+// @description  Blendet alle Deals eines bestimmten Händlers auf mydealz.de aus und zeigt sie wieder an, wenn die Händler-ID entfernt wird
+// @author       Ihr Name
+// @match        https://www.mydealz.de/*
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // Hier die Händler-ID eintragen, dessen Deals ausgeblendet werden sollen
+    const merchantIdToHide = '5032';
+
+    // Funktion zum Ausblenden und Einblenden der Deals
+    function toggleMerchantDeals() {
+        const deals = document.querySelectorAll('article.thread--deal');
+        deals.forEach(deal => {
+            const dataHistory = deal.getAttribute('data-history');
+            if (dataHistory) {
+                if (merchantIdToHide && dataHistory.includes(`merchant-id=${merchantIdToHide}`)) {
+                    deal.style.display = 'none';
+                } else {
+                    deal.style.display = ''; // Standardanzeige wiederherstellen
+                }
+            }
+        });
+    }
+
+    // MutationObserver zum Überwachen von DOM-Änderungen
+    const observer = new MutationObserver(toggleMerchantDeals);
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    // Initiales Ausblenden/Einblenden der Deals
+    toggleMerchantDeals();
+})();
