@@ -22,16 +22,9 @@ fontAwesomeLink.rel = 'stylesheet';
 fontAwesomeLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css';
 document.head.appendChild(fontAwesomeLink);
 
-// ==UserScript==
-// @name         mydealz Script Beta Arbeitsversion
-// @namespace    http://tampermonkey.net/
-// @version      1.6.0
-// @description  UI zur Verwaltung von excludeWords und excludeMerchantIDs mit Backup und Restore
-// @author       Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister), Flo (https://www.mydealz.de/profile/Basics0119)
-// @license      MIT
-// @match        https://www.mydealz.de/*
-// @grant        none
-// ==/UserScript==
+const HIGHLIGHT_GEIZFAKTOR_KEY = 'highlightGeizfaktor';
+const HIGHLIGHT_MAXIMALPREIS_KEY = 'highlightMaximalpreis';
+const HIGHLIGHT_HOTNESS_KEY = 'highlightHotness';
 
 (function() {
     'use strict';
@@ -590,32 +583,40 @@ document.head.appendChild(fontAwesomeLink);
         </div>
     `;
 
-
         document.body.appendChild(settingsDiv);
 
-        // Maximale Preis-Checkbox: Zustand speichern und Highlighting anwenden
-        const maxPriceCheckbox = document.getElementById('highlightMaximalpreis');
-        maxPriceCheckbox.checked = loadMaxPriceCheckboxState();
-        maxPriceCheckbox.addEventListener('change', () => {
-            saveMaxPriceCheckboxState(maxPriceCheckbox.checked);
-            applyHighlighting(); // NEU: Highlighting nach Änderung anwenden
-        });
+        updateInputVisibility(); // Initialen Zustand setzen (DIESE ZEILE HINZUFÜGEN!)
 
-        // Geizfaktor-Checkbox: Zustand speichern und Highlighting anwenden
-        const geizfaktorCheckbox = document.getElementById('highlightGeizfaktor');
-        geizfaktorCheckbox.checked = loadGeizfaktorCheckboxState();
-        geizfaktorCheckbox.addEventListener('change', () => {
-            saveGeizfaktorCheckboxState(geizfaktorCheckbox.checked);
-            applyHighlighting(); // NEU: Highlighting nach Änderung anwenden
-        });
+        const highlightGeizfaktorCheckbox = document.getElementById('highlightGeizfaktor');
+        const highlightMaximalpreisCheckbox = document.getElementById('highlightMaximalpreis');
+        const highlightHotnessCheckbox = document.getElementById('highlightHotness');
 
-        // Hotness-Checkbox: Zustand speichern und Highlighting anwenden
-        const hotnessCheckbox = document.getElementById('highlightHotness');
-        hotnessCheckbox.checked = loadHotnessCheckboxState();
-        hotnessCheckbox.addEventListener('change', () => {
-            saveHotnessCheckboxState(hotnessCheckbox.checked);
-            applyHighlighting(); // NEU: Highlighting nach Änderung anwenden
-        });
+        if (highlightGeizfaktorCheckbox) {
+            highlightGeizfaktorCheckbox.addEventListener('change', (e) => {
+                highlightGeizfaktor = e.target.checked;
+                saveToLocalStorage(HIGHLIGHT_GEIZFAKTOR_KEY, highlightGeizfaktor);
+                applyHighlighting();
+                updateInputVisibility();
+            });
+        }
+
+        if (highlightMaximalpreisCheckbox) {
+            highlightMaximalpreisCheckbox.addEventListener('change', (e) => {
+                highlightMaximalpreis = e.target.checked;
+                saveToLocalStorage(HIGHLIGHT_MAXIMALPREIS_KEY, highlightMaximalpreis);
+                applyHighlighting();
+                updateInputVisibility();
+            });
+        }
+
+        if (highlightHotnessCheckbox) {
+            highlightHotnessCheckbox.addEventListener('change', (e) => {
+                highlightHotness = e.target.checked;
+                saveToLocalStorage(HIGHLIGHT_HOTNESS_KEY, highlightHotness);
+                applyHighlighting();
+                updateInputVisibility();
+            });
+        }
 
         // Speichern der Einstellungen
         document.getElementById('saveSettingsButton').addEventListener('click', () => {
@@ -677,6 +678,25 @@ document.head.appendChild(fontAwesomeLink);
         });
     }
 
+    function updateInputVisibility() {
+        const geizfaktorEinstellungen = document.getElementById('geizfaktorEinstellungen');
+        const maximalpreisEinstellungen = document.getElementById('maximalpreisEinstellungen');
+        const hotnessEinstellungen = document.getElementById('hotnessEinstellungen');
+        const highlightGeizfaktorCheckbox = document.getElementById('highlightGeizfaktor');
+        const highlightMaximalpreisCheckbox = document.getElementById('highlightMaximalpreis');
+        const highlightHotnessCheckbox = document.getElementById('highlightHotness');
+
+        if (geizfaktorEinstellungen && highlightGeizfaktorCheckbox) {
+            geizfaktorEinstellungen.style.display = highlightGeizfaktorCheckbox.checked ? 'block' : 'none';
+        }
+        if (maximalpreisEinstellungen && highlightMaximalpreisCheckbox) {
+            maximalpreisEinstellungen.style.display = highlightMaximalpreisCheckbox.checked ? 'block' : 'none';
+        }
+        if (hotnessEinstellungen && highlightHotnessCheckbox) {
+            hotnessEinstellungen.style.display = highlightHotnessCheckbox.checked ? 'block' : 'none';
+        }
+    }
+
     // Überprüft Deals und blendet sie aus
     processArticles();
 
@@ -691,4 +711,8 @@ document.head.appendChild(fontAwesomeLink);
         subtree: true
     });
     console.log("Skript vollständig geladen.");
+
+    function saveToLocalStorage(key, value) {
+        localStorage.setItem(key, JSON.stringify(value));
+    }
 })();
