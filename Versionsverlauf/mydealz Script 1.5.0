@@ -1,0 +1,582 @@
+
+
+// ==UserScript==
+// @name         mydealz Script Beta
+// @namespace    http://tampermonkey.net/
+// @version      1.5.0
+// @description  UI zur Verwaltung von excludeWords und excludeMerchantIDs mit Backup und Restore
+// @author       Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister), Flo (https://www.mydealz.de/profile/Basics0119)
+// @license      MIT
+// @match        https://www.mydealz.de/*
+// @grant        none
+// ==/UserScript==
+
+// Versions-Änderungen:
+// 1.4.0: Überarbeitete Benutzeroberfläche für die Exclude-Einstellungen mit sinnvoller Button-Anordnung, verbesserte Funktionalität für Backup und Wiederherstellen, Schließen des Einstellungsfensters ohne automatisch zu schließen und verbesserte Darstellung des Dateiuploads für das Wiederherstellen.
+// 1.3.0: Hinzugefügt: Backup- und Restore-Funktionen für excludeWords und excludeMerchantIDs. UI wird nach Wiederherstellung automatisch aktualisiert. Neue Buttons zum Erstellen und Wiederherstellen von Backups im Einstellungsfenster.
+// 1.2.0: excludeWords und excludeMerchantIDs in localStorage ausgelagert, um Daten bei Updates zu erhalten. Hinzugefügt: Benutzeroberfläche (UI) zur Bearbeitung von excludeWords und excludeMerchantIDs direkt auf der Website. Hinzugefügt: Backup und Restore der Daten.
+// 1.1.0: Tooltip für den Ausblenden-Button hinzugefügt, Fehlerbehebung bei Anzeige von Deals.
+// 1.0.1: Fehlerbehebung bei Preisumrechnung, Performance-Optimierung bei Deal-Hervorhebung.
+
+// Einbinden von Font Awesome für Icons
+const fontAwesomeLink = document.createElement('link');
+fontAwesomeLink.rel = 'stylesheet';
+fontAwesomeLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css';
+document.head.appendChild(fontAwesomeLink);
+
+(function() {
+    'use strict';
+
+    // --- 1. Konfiguration ---
+    const EXCLUDE_WORDS_KEY = 'excludeWords';
+    const EXCLUDE_MERCHANTS_KEY = 'excludeMerchantIDs';
+    const HIDDEN_DEALS_KEY = 'hiddenDeals';
+
+    // Lade gespeicherte Werte oder setze Standardwerte
+    let excludeWords = JSON.parse(localStorage.getItem(EXCLUDE_WORDS_KEY)) || [];
+    let excludeMerchantIDs = JSON.parse(localStorage.getItem(EXCLUDE_MERCHANTS_KEY)) || [];
+    let hiddenDeals = JSON.parse(localStorage.getItem(HIDDEN_DEALS_KEY)) || [];
+
+    // Funktion zum Anwenden des Highlightings je nach Checkbox-Zustand
+    function applyHighlighting() {
+        const highlightGeizfaktor = loadGeizfaktorCheckboxState();
+        const highlightMaximalpreis = loadMaxPriceCheckboxState();
+        const highlightHotness = loadHotnessCheckboxState();
+
+        // Geizfaktor: Orange färben
+        const geizfaktorDeals = document.querySelectorAll('article.thread--deal.geizfaktor');
+        geizfaktorDeals.forEach(deal => {
+            if (highlightGeizfaktor) {
+                deal.style.backgroundColor = 'orange';
+            } else {
+                deal.style.backgroundColor = '';
+            }
+        });
+
+        // Maximalpreis: Rot färben
+        const maximalpreisDeals = document.querySelectorAll('article.thread--deal.maximalpreis');
+        maximalpreisDeals.forEach(deal => {
+            if (highlightMaximalpreis) {
+                deal.style.backgroundColor = 'red';
+            } else {
+                deal.style.backgroundColor = '';
+            }
+        });
+
+        // Hotnesslimit: Blau färben
+        const hotnessDeals = document.querySelectorAll('article.thread--deal.hotness');
+        hotnessDeals.forEach(deal => {
+            if (highlightHotness) {
+                deal.style.backgroundColor = 'blue';
+            } else {
+                deal.style.backgroundColor = '';
+            }
+        });
+    }
+
+    // Speichern des Maximalpreis-Checkbox-Zustands
+    function saveMaxPriceCheckboxState(isChecked) {
+        localStorage.setItem('maxPriceCheckboxState', JSON.stringify(isChecked));
+    }
+
+    // Speichern des Geizfaktor-Checkbox-Zustands
+    function saveGeizfaktorCheckboxState(isChecked) {
+        localStorage.setItem('geizfaktorCheckboxState', JSON.stringify(isChecked));
+    }
+
+    // Speichern des Hotnesslimit-Checkbox-Zustands
+    function saveHotnessCheckboxState(isChecked) {
+        localStorage.setItem('hotnessCheckboxState', JSON.stringify(isChecked));
+    }
+
+    // Laden des Maximalpreis-Checkbox-Zustands
+    function loadMaxPriceCheckboxState() {
+        const savedState = localStorage.getItem('maxPriceCheckboxState');
+        if (savedState !== null) {
+            return JSON.parse(savedState); // Rückgabe des gespeicherten Werts (true oder false)
+        }
+        return false; // Rückgabe von false, wenn kein Zustand gespeichert wurde
+    }
+
+    // Laden des Geizfaktor-Checkbox-Zustands
+    function loadGeizfaktorCheckboxState() {
+        const savedState = localStorage.getItem('geizfaktorCheckboxState');
+        if (savedState !== null) {
+            return JSON.parse(savedState); // Rückgabe des gespeicherten Werts (true oder false)
+        }
+        return false; // Rückgabe von false, wenn kein Zustand gespeichert wurde
+    }
+
+    // Laden des Hotnesslimit-Checkbox-Zustands
+    function loadHotnessCheckboxState() {
+        const savedState = localStorage.getItem('hotnessCheckboxState');
+        if (savedState !== null) {
+            return JSON.parse(savedState); // Rückgabe des gespeicherten Werts (true oder false)
+        }
+        return false; // Rückgabe von false, wenn kein Zustand gespeichert wurde
+    }
+
+    // Initialisiere die Highlighting-Optionen, falls noch nicht gespeichert
+    const highlightGeizfaktor = JSON.parse(localStorage.getItem('highlightGeizfaktor')) ?? true;
+    const highlightMaximalpreis = JSON.parse(localStorage.getItem('highlightMaximalpreis')) ?? true;
+    const highlightHotness = JSON.parse(localStorage.getItem('highlightHotness')) ?? true;
+
+    const GEIZFAKTOR_LIMIT = parseFloat(localStorage.getItem('geizfaktorLimit')) || 1;
+    const MAXIMALPREIS_LIMIT = parseFloat(localStorage.getItem('maximalpreisLimit')) || 700;
+    const HOTNESS_LIMIT = parseFloat(localStorage.getItem('hotnessLimit')) || 50;
+
+    // Funktion zum Speichern der ausgeblendeten Deals
+    function saveHiddenDeals() {
+        localStorage.setItem(HIDDEN_DEALS_KEY, JSON.stringify(hiddenDeals));
+    }
+
+    // Speichern der `excludeWords` und `excludeMerchantIDs`
+    function saveExcludeWords(words) {
+        localStorage.setItem('excludeWords', JSON.stringify(words));
+    }
+    function loadExcludeWords() {
+        return JSON.parse(localStorage.getItem('excludeWords')) || [];
+    }
+
+    function saveExcludeMerchants(merchants) {
+        localStorage.setItem(EXCLUDE_MERCHANTS_KEY, JSON.stringify(merchants));
+    }
+
+    // Fügt Event Listener hinzu, um Auto-Speichern zu ermöglichen
+    function addAutoSaveListeners() {
+        // Event Listener für Eingabefelder und Checkboxen
+        const excludeWordsInput = document.getElementById('excludeWordsInput');
+        excludeWordsInput.addEventListener('input', () => {
+            const newWords = excludeWordsInput.value.split('\n').map(w => w.trim()).filter(Boolean);
+            saveExcludeWords(newWords); // Speichern
+            excludeWords = newWords; // Update der Variablen
+            processArticles(); // Sofortige Anwendung
+        });
+
+        const excludeMerchantIDsInput = document.getElementById('excludeMerchantIDsInput');
+        excludeMerchantIDsInput.addEventListener('input', () => {
+            const newMerchantIDs = excludeMerchantIDsInput.value.split('\n').map(id => id.trim()).filter(Boolean);
+            saveExcludeMerchants(newMerchantIDs); // Speichern
+            excludeMerchantIDs = newMerchantIDs; // Update der Variablen
+            processArticles(); // Sofortige Anwendung
+        });
+
+        const geizfaktorInput = document.getElementById('geizfaktorInput');
+        geizfaktorInput.addEventListener('input', () => {
+            const newLimit = parseFloat(geizfaktorInput.value) || 1;
+            localStorage.setItem('geizfaktorLimit', newLimit);
+            processArticles(); // Sofortige Anwendung
+        });
+
+        const maximalpreisInput = document.getElementById('maximalpreisInput');
+        maximalpreisInput.addEventListener('input', () => {
+            const newLimit = parseFloat(maximalpreisInput.value) || 700;
+            localStorage.setItem('maximalpreisLimit', newLimit);
+            processArticles(); // Sofortige Anwendung
+        });
+
+        const hotnessLimitInput = document.getElementById('hotnesslimitInput');
+        hotnessLimitInput.addEventListener('input', () => {
+            const newLimit = parseFloat(hotnessLimitInput.value) || 50;
+            localStorage.setItem('hotnessLimit', newLimit);
+            processArticles(); // Sofortige Anwendung
+        });
+
+        const highlightGeizfaktor = document.getElementById('highlightGeizfaktor');
+        highlightGeizfaktor.addEventListener('change', () => {
+            saveGeizfaktorCheckboxState(highlightGeizfaktor.checked);
+            applyHighlighting(); // Highlighting sofort aktualisieren
+        });
+
+        const highlightMaximalpreis = document.getElementById('highlightMaximalpreis');
+        highlightMaximalpreis.addEventListener('change', () => {
+            saveMaxPriceCheckboxState(highlightMaximalpreis.checked);
+            applyHighlighting(); // Highlighting sofort aktualisieren
+        });
+
+        const highlightHotness = document.getElementById('highlightHotness');
+        highlightHotness.addEventListener('change', () => {
+            saveHotnessCheckboxState(highlightHotness.checked);
+            applyHighlighting(); // Highlighting sofort aktualisieren
+        });
+    }
+
+    // --- 2. Hilfsfunktionen ---
+    function shouldExcludeArticle(article) {
+        const titleElement = article.querySelector('.thread-title');
+        const merchantLink = article.querySelector('a[href*="merchant-id="]');
+
+        if (titleElement && excludeWords.some(word => titleElement.textContent.toLowerCase().includes(word.toLowerCase()))) {
+            return true;
+        }
+
+        if (merchantLink) {
+            const merchantIDMatch = merchantLink.getAttribute('href').match(/merchant-id=(\d+)/);
+            if (merchantIDMatch) {
+                const merchantID = merchantIDMatch[1];
+                if (excludeMerchantIDs.includes(merchantID)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // Färbt den Deal entsprechend den festgelegten Kategorien
+    function colorDeal(deal) {
+        const priceElement = deal.querySelector('.threadItemCard-price');
+        const hotnessElement = deal.querySelector('.hotness');
+
+        let price = 0;
+        if (priceElement) {
+            price = parseFloat(priceElement.textContent.replace(/[^\d.,-]/g, '').replace(',', '.'));
+        }
+
+        let hotness = parseInt(hotnessElement ? hotnessElement.textContent : 0);
+
+        // Überprüfe, ob das Highlighting aktiviert ist
+        const highlightGeizfaktor = JSON.parse(localStorage.getItem('highlightGeizfaktor')) || true;
+        const highlightMaximalpreis = JSON.parse(localStorage.getItem('highlightMaximalpreis')) || true;
+        const highlightHotness = JSON.parse(localStorage.getItem('highlightHotness')) || true;
+
+        // Wende das Highlighting nur an, wenn es aktiviert ist
+        if (highlightGeizfaktor && price < GEIZFAKTOR_LIMIT) {
+            deal.classList.add('geizfaktor');
+        } else if (highlightMaximalpreis && price > MAXIMALPREIS_LIMIT) {
+            deal.classList.add('maximalpreis');
+        } else if (highlightHotness && hotness < HOTNESS_LIMIT) {
+            deal.classList.add('hotness');
+        }
+    }
+
+    function hideDeal(deal) {
+        deal.style.display = 'none';
+    }
+
+    // UI-Button zum Öffnen der Einstellungen wird nur einmal erstellt
+    const settingsButton = document.createElement('button');
+    settingsButton.innerHTML = '⚙️';
+    settingsButton.style.padding = '10px';
+    settingsButton.style.background = 'transparent'; // Hintergrund transparent machen
+    settingsButton.style.color = 'white';
+    settingsButton.style.border = 'none';
+    settingsButton.style.borderRadius = '5px';
+    settingsButton.style.cursor = 'pointer';
+
+    // UI-Button zum Verbergen der Deals wird nur einmal erstellt
+    const hideButton = document.createElement('button');
+    hideButton.innerHTML = '❌';
+    hideButton.style.marginLeft = '10px';
+    hideButton.title = 'Deal verbergen'; // Tooltip hinzufügen
+    hideButton.style.padding = '10px';
+    hideButton.style.background = 'transparent'; // Hintergrund transparent machen
+    hideButton.style.color = 'white';
+    hideButton.style.border = 'none';
+    hideButton.style.borderRadius = '5px';
+    hideButton.style.cursor = 'pointer';
+
+    // Funktion, um das Verbergen der Deals zu ermöglichen
+    hideButton.addEventListener('click', function(event) {
+        const deal = event.target.closest('article');
+        if (deal) {
+            const dealId = deal.getAttribute('id');
+            hiddenDeals.push(dealId);
+            saveHiddenDeals();
+            hideDeal(deal);
+        }
+    });
+
+    function addHideButtons() {
+        const deals = document.querySelectorAll('article:not([data-button-added])');
+
+        deals.forEach(deal => {
+            let dealId = deal.getAttribute('id');
+            if (!dealId) {
+                dealId = 'custom-deal-' + Math.random().toString(36).substr(2, 9);
+                deal.setAttribute('id', dealId);
+            }
+
+            if (hiddenDeals.includes(dealId)) {
+                hideDeal(deal);
+                return;
+            }
+
+            deal.setAttribute('data-button-added', 'true');
+
+            const hideButtonClone = hideButton.cloneNode(true);
+            hideButtonClone.addEventListener('click', function(event) {
+                const deal = event.target.closest('article');
+                if (deal) {
+                    const dealId = deal.getAttribute('id');
+                    hiddenDeals.push(dealId);
+                    saveHiddenDeals();
+                    hideDeal(deal);
+                }
+            });
+
+            const settingsButtonClone = settingsButton.cloneNode(true);
+            settingsButtonClone.addEventListener('click', createSettingsUI);
+
+            const parentElement = deal.querySelector('.flex.boxAlign-ai--all-c.boxAlign-jc--all-sb.space--b-3.space--fromW3-b-2');
+            if (parentElement) {
+                parentElement.insertBefore(hideButtonClone, parentElement.children[1]);
+                parentElement.insertBefore(settingsButtonClone, hideButtonClone.nextSibling);
+            }
+        });
+    }
+
+    // Event-Listener für den neuen Settings-Button
+    document.addEventListener('click', function(event) {
+        if (event.target && event.target.innerHTML === '⚙️') {
+            createSettingsUI();
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', addHideButtons);
+
+    function processArticles() {
+        const articles = document.querySelectorAll('article.thread--deal');
+        articles.forEach(article => {
+            if (shouldExcludeArticle(article)) {
+                hideDeal(article);
+            } else {
+                article.style.display = 'block';
+                article.style.opacity = '1'; // Transparenz zurücksetzen
+                // Färbe den Deal basierend auf den Kategorien
+                colorDeal(article);
+            }
+        });
+        addHideButtons();
+    }
+
+    // --- 3. Backup- und Restore-Funktionen ---
+    function backupData() {
+        const backup = {
+            excludeWords: excludeWords,
+            excludeMerchantIDs: excludeMerchantIDs
+        };
+
+        const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'mydealz_backup.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    // Restore-Funktion
+    function restoreData(event) {
+        const file = event.target.files[0];
+        if (file && file.type === 'application/json') {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const restoredData = JSON.parse(e.target.result);
+                if (restoredData.excludeWords && restoredData.excludeMerchantIDs) {
+                    // Wiederhergestellte Daten in den localStorage speichern
+                    saveExcludeWords(restoredData.excludeWords);
+                    saveExcludeMerchants(restoredData.excludeMerchantIDs);
+
+                    // Arrays aktualisieren
+                    excludeWords.length = 0;
+                    excludeWords.push(...restoredData.excludeWords);
+
+                    excludeMerchantIDs.length = 0;
+                    excludeMerchantIDs.push(...restoredData.excludeMerchantIDs);
+
+                    // UI-Felder mit neuen Daten füllen
+                    document.getElementById('excludeWordsInput').value = restoredData.excludeWords.join('\n');
+                    document.getElementById('excludeMerchantIDsInput').value = restoredData.excludeMerchantIDs.join('\n');
+
+                    // Deals erneut prüfen
+                    processArticles();
+                } else {
+                    alert('Die Backup-Datei ist nicht im richtigen Format.');
+                }
+            };
+            reader.readAsText(file);
+        } else {
+            alert('Bitte wählen Sie eine gültige JSON-Datei aus.');
+        }
+    }
+
+    // --- 4. Benutzeroberfläche (UI) ---
+    let settingsDiv = null;
+    let isSettingsOpen = false;
+
+    function createSettingsUI() {
+        if (isSettingsOpen) return;
+        isSettingsOpen = true;
+
+        const currentExcludeWords = JSON.parse(localStorage.getItem(EXCLUDE_WORDS_KEY)) || [];
+        const currentExcludeMerchantIDs = JSON.parse(localStorage.getItem(EXCLUDE_MERCHANTS_KEY)) || [];
+        const highlightGeizfaktor = JSON.parse(localStorage.getItem('highlightGeizfaktor')) || true;
+        const highlightMaximalpreis = JSON.parse(localStorage.getItem('highlightMaximalpreis')) || true;
+        const highlightHotness = JSON.parse(localStorage.getItem('highlightHotness')) || true;
+
+        settingsDiv = document.createElement('div');
+        settingsDiv.style.position = 'fixed';
+        settingsDiv.style.bottom = '10px';
+        settingsDiv.style.right = '10px';
+        settingsDiv.style.padding = '15px';
+        settingsDiv.style.background = '#f9f9f9';
+        settingsDiv.style.border = '1px solid #ccc';
+        settingsDiv.style.borderRadius = '5px';
+        settingsDiv.style.zIndex = '1000';
+        settingsDiv.style.maxWidth = '300px';
+        settingsDiv.style.overflow = 'auto';
+
+        settingsDiv.innerHTML = `
+            <h4 style="margin-bottom: 10px;">Exclude Einstellungen</h4>
+            <div style="margin-bottom: 15px;">
+                <label for="excludeWordsInput" style="font-weight: bold;">Exclude Words</label>
+                <textarea id="excludeWordsInput" rows="5" style="width: 100%; margin-top: 5px; padding: 5px; border: 1px solid #ccc; border-radius: 3px; background: #f0f0f0;">${currentExcludeWords.join('\n')}</textarea>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label for="excludeMerchantIDsInput" style="font-weight: bold;">Exclude Merchant IDs</label>
+                <textarea id="excludeMerchantIDsInput" rows="3" style="width: 100%; margin-top: 5px; padding: 5px; border: 1px solid #ccc; border-radius: 3px; background: #f0f0f0;">${currentExcludeMerchantIDs.join('\n')}</textarea>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label for="geizfaktorInput" style="font-weight: bold;">Geizfaktor (Preis unter)</label>
+                <input type="number" id="geizfaktorInput" value="${GEIZFAKTOR_LIMIT}" style="width: 100%; padding: 5px; border: 1px solid #ccc; border-radius: 3px; background: #f0f0f0;">
+                <label for="highlightGeizfaktor" style="margin-left: 10px;">
+                    <input type="checkbox" id="highlightGeizfaktor" ${highlightGeizfaktor ? 'checked' : ''} />
+                    Geizfaktor Highlighting aktivieren
+                </label>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label for="maximalpreisInput" style="font-weight: bold;">Maximalpreis (Preis über)</label>
+                <input type="number" id="maximalpreisInput" value="${MAXIMALPREIS_LIMIT}" style="width: 100%; padding: 5px; border: 1px solid #ccc; border-radius: 3px; background: #f0f0f0;">
+                <label for="highlightMaximalpreis" style="margin-left: 10px;">
+                    <input type="checkbox" id="highlightMaximalpreis" ${highlightMaximalpreis ? 'checked' : ''} />
+                    Maximalpreis Highlighting aktivieren
+                </label>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label for="hotnesslimitInput" style="font-weight: bold;">Hotnesslimit (Hotness unter)</label>
+                <input type="number" id="hotnesslimitInput" value="${HOTNESS_LIMIT}" style="width: 100%; padding: 5px; border: 1px solid #ccc; border-radius: 3px; background: #f0f0f0;">
+                <label for="highlightHotness" style="margin-left: 10px;">
+                    <input type="checkbox" id="highlightHotness" ${highlightHotness ? 'checked' : ''} />
+                    Hotness Highlighting aktivieren
+                </label>
+            </div>
+            <div style="text-align: right;">
+                <button id="saveSettingsButton" style="padding: 8px 12px; background: none; border: none; cursor: pointer;" title="Speichern">
+                    <i class="fas fa-save"></i>
+                </button>
+                <button id="createBackupButton" style="padding: 8px 12px; background: none; border: none; cursor: pointer;" title="Backup erstellen">
+                    <i class="fas fa-file-export"></i>
+                </button>
+                <button id="restoreBackupButton" style="padding: 8px 12px; background: none; border: none; cursor: pointer;" title="Wiederherstellen">
+                    <i class="fas fa-file-import"></i>
+                </button>
+                <input type="file" id="restoreFileInput" style="display: none;" />
+                <button id="closeSettingsButton" style="padding: 8px 12px; background: none; border: none; cursor: pointer;" title="Schließen">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        `;
+
+
+        document.body.appendChild(settingsDiv);
+
+        // Maximale Preis-Checkbox: Zustand speichern und Highlighting anwenden
+        const maxPriceCheckbox = document.getElementById('highlightMaximalpreis');
+        maxPriceCheckbox.checked = loadMaxPriceCheckboxState();
+        maxPriceCheckbox.addEventListener('change', () => {
+            saveMaxPriceCheckboxState(maxPriceCheckbox.checked);
+            applyHighlighting(); // NEU: Highlighting nach Änderung anwenden
+        });
+
+        // Geizfaktor-Checkbox: Zustand speichern und Highlighting anwenden
+        const geizfaktorCheckbox = document.getElementById('highlightGeizfaktor');
+        geizfaktorCheckbox.checked = loadGeizfaktorCheckboxState();
+        geizfaktorCheckbox.addEventListener('change', () => {
+            saveGeizfaktorCheckboxState(geizfaktorCheckbox.checked);
+            applyHighlighting(); // NEU: Highlighting nach Änderung anwenden
+        });
+
+        // Hotness-Checkbox: Zustand speichern und Highlighting anwenden
+        const hotnessCheckbox = document.getElementById('highlightHotness');
+        hotnessCheckbox.checked = loadHotnessCheckboxState();
+        hotnessCheckbox.addEventListener('change', () => {
+            saveHotnessCheckboxState(hotnessCheckbox.checked);
+            applyHighlighting(); // NEU: Highlighting nach Änderung anwenden
+        });
+
+        // Speichern der Einstellungen
+        document.getElementById('saveSettingsButton').addEventListener('click', () => {
+            applyHighlighting(); // Sicherstellen, dass Änderungen angewendet werden
+            const newWords = document.getElementById('excludeWordsInput').value.split('\n').map(w => w.trim()).filter(Boolean);
+            const newMerchantIDs = document.getElementById('excludeMerchantIDsInput').value.split('\n').map(id => id.trim()).filter(Boolean);
+            const newGeizfaktor = parseInt(document.getElementById('geizfaktorInput').value);
+            const newMaximalpreis = parseInt(document.getElementById('maximalpreisInput').value);
+            const newHotnesslimit = parseInt(document.getElementById('hotnesslimitInput').value);
+            const geizfaktorValue = document.getElementById('geizfaktorInput').value;
+            const maximalpreisValue = document.getElementById('maximalpreisInput').value;
+            const hotnesslimitValue = document.getElementById('hotnesslimitInput').value;
+
+            // Auto-Speichern aktivieren
+            addAutoSaveListeners();
+
+            // Highlighting-Optionen speichern
+            localStorage.setItem('highlightGeizfaktor', document.getElementById('highlightGeizfaktor').checked);
+            localStorage.setItem('highlightMaximalpreis', document.getElementById('highlightMaximalpreis').checked);
+            localStorage.setItem('highlightHotness', document.getElementById('highlightHotness').checked);
+
+            // Speichern der Werte im localStorage
+            localStorage.setItem('geizfaktor', geizfaktorValue);
+            localStorage.setItem('maximalpreis', maximalpreisValue);
+            localStorage.setItem('hotnesslimit', hotnesslimitValue);
+
+            saveGeizfaktorCheckboxState(document.getElementById('highlightGeizfaktor').checked);
+            saveMaxPriceCheckboxState(document.getElementById('highlightMaximalpreis').checked);
+            saveHotnessCheckboxState(document.getElementById('highlightHotness').checked);
+
+            // Exclude-Listen speichern
+            saveExcludeWords(newWords);
+            saveExcludeMerchants(newMerchantIDs);
+
+            // Konfiguration aktualisieren
+
+            excludeWords = newWords;
+            excludeMerchantIDs = newMerchantIDs;
+
+            // Nach dem Speichern der Einstellungen die Deals erneut überprüfen
+            processArticles();
+
+            // Initiales Highlighting anwenden
+            applyHighlighting(); // NEU: Initiale Anwendung des Highlighting
+
+        });
+
+        document.getElementById('createBackupButton').addEventListener('click', backupData);
+
+        document.getElementById('restoreBackupButton').addEventListener('click', () => {
+            document.getElementById('restoreFileInput').click();
+        });
+
+        document.getElementById('restoreFileInput').addEventListener('change', restoreData);
+
+        document.getElementById('closeSettingsButton').addEventListener('click', () => {
+            isSettingsOpen = false;
+            settingsDiv.remove();
+        });
+    }
+
+    // Überprüft Deals und blendet sie aus
+    processArticles();
+
+    // --- MutationObserver für dynamisch geladene Artikel ---
+    const observer = new MutationObserver(() => {
+        processArticles(); // Nach Änderungen DOM erneut überprüfen
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
+})();
+
