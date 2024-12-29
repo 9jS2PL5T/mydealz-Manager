@@ -1,0 +1,113 @@
+// ==UserScript==
+// @name         mydealz Händler aus Titel entfernen
+// @namespace    http://tampermonkey.net/
+// @version      0.1
+// @description  Remove merchant names from deal titles when already defined as merchant
+// @author       You
+// @match        https://www.mydealz.de/*
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    function cleanMerchantNameFromTitle(deal, retryCount = 0) {
+        const MAX_RETRIES = 5;
+        const dealId = deal.getAttribute('id');
+        
+        // Stage 1: Loading Check with logging
+        if (deal.querySelector('[aria-busy="true"]')) {
+            console.log(`[LOADING] Deal ${dealId} - Retry ${retryCount}/${MAX_RETRIES}`);
+            if (retryCount < MAX_RETRIES) {
+                setTimeout(() => cleanMerchantNameFromTitle(deal, retryCount + 1), 200);
+            }
+            return;
+        }
+    
+        const merchantLink = deal.querySelector('a[data-t="merchantLink"]');
+        const titleLink = deal.querySelector('a.cept-tt.thread-link');
+        
+        if (!merchantLink || !titleLink) {
+            console.log(`[ERROR] Deal ${dealId} - Missing links:`, {merchantLink, titleLink});
+            return;
+        }
+    
+        const merchantName = merchantLink.textContent.trim();
+        const originalTitle = titleLink.textContent;
+        console.log(`[PROCESS] Deal ${dealId} - Merchant: "${merchantName}", Title: "${originalTitle}"`);
+    
+        // Enhanced merchant variants
+        const merchantVariants = [
+            merchantName,
+            merchantName.toLowerCase(),
+            merchantName.replace(/\s+/g, ''),
+            merchantName.toLowerCase().replace(/\s+/g, ''),
+            // Special cases
+            merchantName === 'Netto Marken-Discount' ? 'Netto MD' : null,
+            merchantName === 'Netto Marken-Discount' ? 'Netto' : null,
+        ].filter(Boolean);
+    
+        let newTitle = originalTitle;
+        // Remove merchant name patterns
+        merchantVariants.forEach(variant => {
+            const patterns = [
+                new RegExp(`\\[${variant}[\\s/]*\\]`, 'gi'),
+                new RegExp(`\\[${variant}[\\s/]+(?:Shop|Store|Deck|offline)*\\]`, 'gi'),
+                new RegExp(`^${variant}[\\s/]+`, 'gi'),
+                new RegExp(`\\(${variant}[\\s/]*\\)`, 'gi'),
+                new RegExp(`\\(${variant}\\s+offline[^)]*\\)`, 'gi'),
+                new RegExp(`^\\(${variant}[^)]*\\)\\s*`, 'gi')
+            ];
+            
+            patterns.forEach(pattern => {
+                if (newTitle.match(pattern)) {
+                    console.log(`[MATCH] Found "${pattern}" in deal ${dealId}`);
+                    newTitle = newTitle.replace(pattern, '');
+                }
+            });
+        });
+    
+        // Clean up artifacts
+        newTitle = newTitle
+            .replace(/\[\s*\/?\s*\]/g, '') // Remove brackets with optional slash
+            .replace(/\(\s*\/?\s*\)/g, '') // Remove parentheses with optional slash
+            .replace(/\s*\/\s*/g, '') // Remove standalone slashes
+            .replace(/^\s*\([^)]*\)\s*/g, '') // Remove leading parentheses
+            .replace(/\s+/g, ' ') // Normalize spaces
+            .trim();
+    
+        console.log(`[RESULT] Deal ${dealId} - New title: "${newTitle}"`);
+        
+        if (newTitle !== originalTitle) {
+            titleLink.textContent = newTitle;
+            titleLink.setAttribute('title', newTitle);
+        }
+    }
+
+    function processArticles() {
+        const deals = document.querySelectorAll('article.thread--deal:not([data-processed]), article.thread--voucher:not([data-processed])');
+        deals.forEach(deal => {
+            cleanMerchantNameFromTitle(deal);
+            deal.setAttribute('data-processed', 'true');
+        });
+    }
+
+    // Initial processing
+    processArticles();
+
+    // Observer for new content
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            mutation.addedNodes.forEach(node => {
+                if (node.nodeType === 1 && node.matches('article')) {
+                    requestAnimationFrame(() => cleanMerchantNameFromTitle(node));
+                }
+            });
+        });
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+})();
