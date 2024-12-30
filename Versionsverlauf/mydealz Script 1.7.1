@@ -1,0 +1,512 @@
+// ==UserScript==
+// @name         mydealz Script 1.7.1
+// @namespace    http://tampermonkey.net/
+// @version      1.7.1
+// @description  mydealz Deal-Management: Deals filtern und ausblenden, alle Einstellungen per UI verwalten.
+// @author       Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister), Flo (https://www.mydealz.de/profile/Basics0119)
+// @license      MIT
+// @match        https://www.mydealz.de/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=mydealz.de
+// @grant        none
+// ==/UserScript==
+
+// Versions-Änderungen:
+// Backup erhält nun Zeitstempel im Dateinamen.
+
+// Einbinden von Font Awesome für Icons
+const fontAwesomeLink = document.createElement('link');
+fontAwesomeLink.rel = 'stylesheet';
+fontAwesomeLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css';
+document.head.appendChild(fontAwesomeLink);
+
+// --- 1. Initial Setup ---
+const EXCLUDE_WORDS_KEY = 'excludeWords';
+const EXCLUDE_MERCHANTS_KEY = 'excludeMerchantIDs';
+const HIDDEN_DEALS_KEY = 'hiddenDeals';
+
+// Load data immediately
+let excludeWords, excludeMerchantIDs, hiddenDeals;
+
+try {
+    excludeWords = JSON.parse(localStorage.getItem(EXCLUDE_WORDS_KEY)) || [];
+    excludeMerchantIDs = JSON.parse(localStorage.getItem(EXCLUDE_MERCHANTS_KEY)) || [];
+    hiddenDeals = JSON.parse(localStorage.getItem(HIDDEN_DEALS_KEY)) || [];
+
+    console.log('[INIT-1] Loaded data from localStorage');
+    console.log('[INIT-2] Configuration:', {
+        excludeWords,
+        excludeMerchantIDs,
+        hiddenDeals
+    });
+} catch (error) {
+    console.error('[ERROR] Failed to load configuration:', error);
+    excludeWords = [];
+    excludeMerchantIDs = [];
+    hiddenDeals = [];
+}
+
+// --- 1. Core Functions ---
+function processArticles() {
+    console.log('[DEBUG] Processing articles with config:', {
+        excludeWords: excludeWords.length,
+        excludeMerchantIDs: excludeMerchantIDs.length,
+        hiddenDeals: hiddenDeals.length
+    });
+
+    const deals = document.querySelectorAll('article.thread--deal, article.thread--voucher');
+    deals.forEach(deal => {
+        const dealId = deal.getAttribute('id');
+
+        // Check if manually hidden
+        if (hiddenDeals.includes(dealId)) {
+            console.log(`[DEBUG] Deal ${dealId} is in hidden list`);
+            hideDeal(deal);
+            return;
+        }
+
+        // Check if should be hidden by rules
+        if (shouldExcludeArticle(deal)) {
+            console.log(`[DEBUG] Hiding deal ${dealId} by rules`);
+            hideDeal(deal);
+            return;
+        }
+
+        // Show deal if not excluded
+        deal.style.display = 'block';
+        deal.style.opacity = '1';
+    });
+}
+
+// Define observer
+const observer = new MutationObserver((mutations) => {
+    mutations.forEach(mutation => {
+        if (mutation.addedNodes.length) {
+            processArticles();
+            addSettingsButton();
+            addHideButtons();
+        }
+    });
+});
+
+// Initialize everything
+(function init() {
+    processArticles();
+    addSettingsButton();
+    addHideButtons();
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+})();
+
+// --- 2. Hilfsfunktionen ---
+function shouldExcludeArticle(article) {
+    const titleElement = article.querySelector('.thread-title');
+    const merchantLink = article.querySelector('a[href*="merchant-id="]');
+
+    if (titleElement && excludeWords.some(word => titleElement.textContent.toLowerCase().includes(word.toLowerCase()))) {
+        return true;
+    }
+
+    if (merchantLink) {
+        const merchantIDMatch = merchantLink.getAttribute('href').match(/merchant-id=(\d+)/);
+        if (merchantIDMatch) {
+            const merchantID = merchantIDMatch[1];
+            if (excludeMerchantIDs.includes(merchantID)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+function hideDeal(deal) {
+    deal.style.display = 'none';
+}
+
+// Funktion zum Speichern der ausgeblendeten Deals
+function saveHiddenDeals() {
+    localStorage.setItem(HIDDEN_DEALS_KEY, JSON.stringify(hiddenDeals));
+}
+
+// Speichern der `excludeWords` und `excludeMerchantIDs`
+function saveExcludeWords(words) {
+    localStorage.setItem('excludeWords', JSON.stringify(words));
+}
+function loadExcludeWords() {
+    return JSON.parse(localStorage.getItem('excludeWords')) || [];
+}
+
+function saveExcludeMerchants(merchants) {
+    localStorage.setItem(EXCLUDE_MERCHANTS_KEY, JSON.stringify(merchants));
+}
+
+// Fügt Event Listener hinzu, um Auto-Speichern zu ermöglichen
+function addAutoSaveListeners() {
+    // Event Listener für Eingabefelder
+    const excludeWordsInput = document.getElementById('excludeWordsInput');
+    excludeWordsInput.addEventListener('input', () => {
+        const newWords = excludeWordsInput.value.split('\n').map(w => w.trim()).filter(Boolean);
+        saveExcludeWords(newWords);
+        excludeWords = newWords;
+        processArticles();
+    });
+
+    const excludeMerchantIDsInput = document.getElementById('excludeMerchantIDsInput');
+    excludeMerchantIDsInput.addEventListener('input', () => {
+        const newMerchantIDs = excludeMerchantIDsInput.value.split('\n').map(id => id.trim()).filter(Boolean);
+        saveExcludeMerchants(newMerchantIDs);
+        excludeMerchantIDs = newMerchantIDs;
+        processArticles();
+    });
+}
+
+// Remove highlighting-related event listeners
+
+// UI-Button zum Öffnen der Einstellungen wird nur einmal erstellt
+const settingsButton = document.createElement('button');
+settingsButton.innerHTML = '⚙️';
+settingsButton.style.padding = '10px';
+settingsButton.style.background = 'transparent'; // Hintergrund transparent machen
+settingsButton.style.color = 'white';
+settingsButton.style.border = 'none';
+settingsButton.style.borderRadius = '5px';
+settingsButton.style.cursor = 'pointer';
+
+// UI-Button zum Verbergen der Deals wird nur einmal erstellt
+const hideButton = document.createElement('button');
+hideButton.innerHTML = '❌';
+hideButton.style.marginLeft = '10px';
+hideButton.title = 'Deal verbergen'; // Tooltip hinzufügen
+hideButton.style.padding = '10px';
+hideButton.style.background = 'transparent'; // Hintergrund transparent machen
+hideButton.style.color = 'white';
+hideButton.style.border = 'none';
+hideButton.style.borderRadius = '5px';
+hideButton.style.cursor = 'pointer';
+
+// Funktion, um das Verbergen der Deals zu ermöglichen
+hideButton.addEventListener('click', function(event) {
+    const deal = event.target.closest('article');
+    if (deal) {
+        const dealId = deal.getAttribute('id');
+        hiddenDeals.push(dealId);
+        saveHiddenDeals();
+        hideDeal(deal);
+    }
+});
+
+function addSettingsButton() {
+    const deals = document.querySelectorAll('article:not([data-settings-added])');
+
+    deals.forEach(deal => {
+        if (deal.hasAttribute('data-settings-added')) return;
+
+        const settingsBtn = document.createElement('button');
+        settingsBtn.innerHTML = '⚙️';
+        settingsBtn.className = 'vote-button overflow--visible';
+        settingsBtn.title = 'Einstellungen';
+        settingsBtn.style.cssText = `
+            border: none;
+            cursor: pointer;
+            height: 32px;
+            width: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            padding: 0;
+            background: transparent;
+        `;
+
+        const settingsContainer = document.createElement('div');
+        settingsContainer.className = 'vote-box border color--border-TranslucentPrimary bRad--a bRad--circle fadeOuterEdge--r';
+        settingsContainer.style.cssText = `
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 8px;
+            height: 32px;
+            width: 32px;
+            border-radius: 50%;
+            background: #f2f2f2;
+            border: 1px solid #e4e4e4;
+            padding: 4px;
+        `;
+
+        settingsBtn.addEventListener('click', createSettingsUI);
+        settingsContainer.appendChild(settingsBtn);
+
+        const voteBox = deal.querySelector('.vote-box');
+        if (voteBox) {
+            voteBox.parentNode.insertBefore(settingsContainer, voteBox.nextSibling);
+            deal.setAttribute('data-settings-added', 'true');
+        }
+    });
+}
+
+function addHideButtons() {
+    const deals = document.querySelectorAll('article:not([data-button-added])');
+
+    deals.forEach(deal => {
+        if (deal.hasAttribute('data-button-added')) return;
+
+        const voteTemp = deal.querySelector('.cept-vote-temp');
+        if (!voteTemp) return;
+
+        const hideButtonContainer = document.createElement('div');
+        hideButtonContainer.style.cssText = `
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            z-index: 10001;
+            pointer-events: none;
+        `;
+
+        const hideButton = document.createElement('button');
+        hideButton.innerHTML = '❌';
+        hideButton.className = 'vote-button overflow--visible';
+        hideButton.title = 'Deal verbergen';
+        hideButton.style.cssText = `
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10002;
+            background: rgba(255, 255, 255, 0.9);
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            padding: 8px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: all;
+        `;
+
+        hideButton.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const dealId = deal.getAttribute('id');
+            console.log('[DEBUG] Hide button clicked for deal:', dealId);
+            hiddenDeals.push(dealId);
+            saveHiddenDeals();
+            hideDeal(deal);
+            return false;
+        };
+
+        hideButtonContainer.appendChild(hideButton);
+        voteTemp.appendChild(hideButtonContainer);
+
+        voteTemp.addEventListener('mouseenter', () => {
+            hideButtonContainer.style.display = 'block';
+        }, true);
+
+        voteTemp.addEventListener('mouseleave', () => {
+            hideButtonContainer.style.display = 'none';
+        }, true);
+
+        deal.setAttribute('data-button-added', 'true');
+    });
+}
+
+// HTML Decoder Funktion hinzufügen
+function decodeHtml(html) {
+    const txt = document.createElement('textarea');
+    txt.innerHTML = html;
+    return txt.value;
+}
+
+// --- 3. Backup- und Restore-Funktionen ---
+function backupData() {
+    const backup = {
+        excludeWords: excludeWords,
+        excludeMerchantIDs: excludeMerchantIDs
+    };
+
+    // Create timestamp for filename
+    const now = new Date();
+    const timestamp = now.getFullYear() + '-' +
+          String(now.getMonth() + 1).padStart(2, '0') + '-' +
+          String(now.getDate()).padStart(2, '0') + '_' +
+          String(now.getHours()).padStart(2, '0') + '.' +
+          String(now.getMinutes()).padStart(2, '0');
+
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mydealz_backup_${timestamp}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+// Restore-Funktion
+function restoreData(event) {
+    const file = event.target.files[0];
+    if (file && file.type === 'application/json') {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const restoredData = JSON.parse(e.target.result);
+            if (restoredData.excludeWords && restoredData.excludeMerchantIDs) {
+                // Wiederhergestellte Daten in den localStorage speichern
+                saveExcludeWords(restoredData.excludeWords);
+                saveExcludeMerchants(restoredData.excludeMerchantIDs);
+
+                // Arrays aktualisieren
+                excludeWords.length = 0;
+                excludeWords.push(...restoredData.excludeWords);
+
+                excludeMerchantIDs.length = 0;
+                excludeMerchantIDs.push(...restoredData.excludeMerchantIDs);
+
+                // UI-Felder mit neuen Daten füllen
+                document.getElementById('excludeWordsInput').value = restoredData.excludeWords.join('\n');
+                document.getElementById('excludeMerchantIDsInput').value = restoredData.excludeMerchantIDs.join('\n');
+
+                // Deals erneut prüfen
+                processArticles();
+            } else {
+                alert('Die Backup-Datei ist nicht im richtigen Format.');
+            }
+        };
+        reader.readAsText(file);
+    } else {
+        alert('Bitte wählen Sie eine gültige JSON-Datei aus.');
+    }
+}
+
+// --- 4. Benutzeroberfläche (UI) ---
+let settingsDiv = null;
+let isSettingsOpen = false;
+
+function createSettingsUI() {
+    if (isSettingsOpen) return;
+    isSettingsOpen = true;
+
+    // Re-process articles when opening settings
+    console.log('[DEBUG] Opening settings - reprocessing articles');
+    processArticles();
+
+    const currentExcludeWords = JSON.parse(localStorage.getItem(EXCLUDE_WORDS_KEY)) || [];
+    const currentExcludeMerchantIDs = JSON.parse(localStorage.getItem(EXCLUDE_MERCHANTS_KEY)) || [];
+
+    settingsDiv = document.createElement('div');
+    settingsDiv.style.position = 'fixed';
+    settingsDiv.style.bottom = '10px';
+    settingsDiv.style.right = '10px';
+    settingsDiv.style.padding = '15px';
+    settingsDiv.style.background = '#f9f9f9';
+    settingsDiv.style.border = '1px solid #ccc';
+    settingsDiv.style.borderRadius = '5px';
+    settingsDiv.style.zIndex = '1000';
+    settingsDiv.style.maxWidth = '300px';
+    settingsDiv.style.overflow = 'auto';
+
+    settingsDiv.innerHTML = `
+    <h4 style="margin-bottom: 10px;">Einstellungen zum Ausblenden</h4>
+    <div style="margin-bottom: 15px;">
+        <label for="excludeWordsInput" style="font-weight: bold;">Schlagworte</label>
+        <textarea id="excludeWordsInput" rows="2" style="width: 80%; margin-top: 5px; padding: 5px; border: 1px solid #ccc; border-radius: 3px; background: #f0f0f0;">${currentExcludeWords.join('\n')}</textarea>
+    </div>
+    <div style="margin-bottom: 15px;">
+        <label for="excludeMerchantIDsInput" style="font-weight: bold;">Händler IDs</label>
+        <textarea id="excludeMerchantIDsInput" rows="2" style="width: 100%; margin-top: 5px; padding: 5px; border: 1px solid #ccc; border-radius: 3px; background: #f0f0f0;">${currentExcludeMerchantIDs.join('\n')}</textarea>
+    </div>
+    <div style="text-align: right;">
+        <button id="saveSettingsButton" style="padding: 8px 12px; background: none; border: none; cursor: pointer;" title="Speichern">
+            <i class="fas fa-save"></i>
+        </button>
+        <button id="createBackupButton" style="padding: 8px 12px; background: none; border: none; cursor: pointer;" title="Backup erstellen">
+            <i class="fas fa-file-export"></i>
+        </button>
+        <button id="restoreBackupButton" style="padding: 8px 12px; background: none; border: none; cursor: pointer;" title="Wiederherstellen">
+            <i class="fas fa-file-import"></i>
+        </button>
+        <input type="file" id="restoreFileInput" style="display: none;" />
+        <button id="closeSettingsButton" style="padding: 8px 12px; background: none; border: none; cursor: pointer;" title="Schließen">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+`;
+
+
+    document.body.appendChild(settingsDiv);
+
+    // Speichern der Einstellungen
+    document.getElementById('saveSettingsButton').addEventListener('click', () => {
+        const newWords = document.getElementById('excludeWordsInput').value.split('\n').map(w => w.trim()).filter(Boolean);
+        const newMerchantIDs = document.getElementById('excludeMerchantIDsInput').value.split('\n').map(id => id.trim()).filter(Boolean);
+
+        // Auto-Speichern aktivieren
+        addAutoSaveListeners();
+
+        // Exclude-Listen speichern
+        saveExcludeWords(newWords);
+        saveExcludeMerchants(newMerchantIDs);
+
+        // Konfiguration aktualisieren
+        excludeWords = newWords;
+        excludeMerchantIDs = newMerchantIDs;
+
+        // Nach dem Speichern der Einstellungen die Deals erneut überprüfen
+        processArticles();
+    });
+
+    // Backup/Restore Event Listeners
+    document.getElementById('createBackupButton').addEventListener('click', backupData);
+
+    document.getElementById('restoreBackupButton').addEventListener('click', () => {
+        document.getElementById('restoreFileInput').click();
+    });
+
+    document.getElementById('restoreFileInput').addEventListener('change', restoreData);
+
+    // Close Settings
+    document.getElementById('closeSettingsButton').addEventListener('click', () => {
+        isSettingsOpen = false;
+        settingsDiv.remove();
+    });
+}
+
+// Initial processing and observer setup
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('[INIT] Starting initial processing');
+    processArticles();
+});
+
+// Add initialization logging
+console.log('[DEBUG] Initial excludeMerchantIDs:', excludeMerchantIDs);
+
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('[INIT-3] DOMContentLoaded - Adding buttons');
+    addSettingsButton();
+    addHideButtons();
+});
+
+window.addEventListener('load', () => {
+    console.log('[INIT-4] Window loaded - Processing deals');
+    processArticles();
+});
+
+function initObserver() {
+    console.log('[INIT-5] Setting up observer');
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+}
+
+// Call initial setup
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('[INIT-6] Starting initialization');
+    processArticles();
+    initObserver();
+});
