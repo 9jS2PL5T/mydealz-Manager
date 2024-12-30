@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 // Versions-Änderungen:
-// Fix: Touch-Screen Geräte: Button zum Deal verbergen wieder sichtbar beim Tippen auf die Temperatur.
+// Backup erhält nun Zeitstempel im Dateinamen.
 
 // Einbinden von Font Awesome für Icons
 const fontAwesomeLink = document.createElement('link');
@@ -298,6 +298,7 @@ function addHideButtons() {
         // Touch device handling
         if ('ontouchstart' in window) {
             let buttonVisible = false;
+            let touchCount = 0;
 
             voteTemp.addEventListener('touchstart', (e) => {
                 e.preventDefault();
@@ -313,10 +314,22 @@ function addHideButtons() {
             hideButton.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const dealId = deal.getAttribute('id');
-                hiddenDeals.push(dealId);
-                saveHiddenDeals();
-                hideDeal(deal);
+                touchCount++;
+
+                if (touchCount === 2) {
+                    // Second touch on hide button: Hide deal
+                    const dealId = deal.getAttribute('id');
+                    hiddenDeals.push(dealId);
+                    saveHiddenDeals();
+                    hideDeal(deal);
+                }
+            }, true);
+
+            // Reset touch count when button is hidden
+            voteTemp.addEventListener('mouseleave', () => {
+                buttonVisible = false;
+                touchCount = 0;
+                hideButtonContainer.style.display = 'none';
             }, true);
         } else {
             // Desktop hover behavior
