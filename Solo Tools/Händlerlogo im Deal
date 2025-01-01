@@ -1,0 +1,194 @@
+// ==UserScript==
+// @name         Händlerlogo im Deal
+// @namespace    http://tampermonkey.net/
+// @version      1.0
+// @description  Fügt das Logo des Händlers als Hintergrund in den Deal
+// @author       Flo (https://github.com/9jS2PL5T) (https://www.mydealz.de/profile/Basics0119)
+// @match        https://www.mydealz.de/*
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // Constants
+    const PROCESSED_ATTR = 'data-bg-processed';
+
+    // Extract merchant ID from deal
+    const getMerchantId = (dealElement) => {
+        try {
+            // Find merchant link with either pattern
+            const merchantLink = dealElement.querySelector('a[href*="deals?merchant-id="], a[href*="gutscheine?merchant-id="]');
+            if (!merchantLink) return null;
+
+            // Extract ID from either URL pattern
+            const match = merchantLink.href.match(/merchant-id=(\d+)/);
+            return match ? match[1] : null;
+        } catch (error) {
+            console.debug('[Merchant BG] Error extracting merchant ID:', error);
+            return null;
+        }
+    };
+
+    // Build logo URL for merchant
+    const getLogoUrl = (merchantId, version) => {
+        return `https://static.mydealz.de/merchants/raw/avatar/${merchantId}_${version}/re/140x140/qt/70/${merchantId}_${version}.jpg`;
+    };
+
+    const checkLogoExists = async (url) => {
+        try {
+            const response = await fetch(url, { method: 'HEAD' });
+            return response.ok;
+        } catch (error) {
+            return false;
+        }
+    };
+
+    // Add cache management
+    const logoCache = {
+        // Cache in localStorage to persist between page loads
+        set: (merchantId, status) => {
+            try {
+                localStorage.setItem(`logo_${merchantId}`, JSON.stringify({
+                    exists: status.exists,
+                    url: status.url,
+                    version: status.version,
+                    timestamp: Date.now()
+                }));
+            } catch (e) {
+                console.debug('[Logo Cache] Storage failed:', e);
+            }
+        },
+
+        get: (merchantId) => {
+            try {
+                const data = localStorage.getItem(`logo_${merchantId}`);
+                if (!data) return null;
+
+                const parsed = JSON.parse(data);
+                // Expire after 24h
+                if (Date.now() - parsed.timestamp > 24 * 60 * 60 * 1000) {
+                    localStorage.removeItem(`logo_${merchantId}`);
+                    return null;
+                }
+                return parsed.status;
+            } catch (e) {
+                return null;
+            }
+        }
+    };
+
+    // Throttle requests
+    const queue = [];
+    let processing = false;
+
+    const findLatestLogoVersion = async (merchantId) => {
+        let latestVersion = 1;
+        for (let version = 1; version <= 3; version++) {
+            const url = getLogoUrl(merchantId, version);
+            if (await checkLogoExists(url)) {
+                latestVersion = version;
+            }
+        }
+        return latestVersion;
+    };
+
+    const processQueue = async () => {
+        if (processing || queue.length === 0) return;
+        processing = true;
+
+        const deal = queue.shift();
+        try {
+            const merchantId = getMerchantId(deal);
+            if (!merchantId) return;
+
+            // Check cache first
+            const cached = logoCache.get(merchantId);
+            if (cached) {
+                if (cached.exists) {
+                    applyLogo(deal, cached.url);
+                }
+                return;
+            }
+
+            // Find latest logo version
+            const version = await findLatestLogoVersion(merchantId);
+            const logoUrl = getLogoUrl(merchantId, version);
+
+            logoCache.set(merchantId, {
+                exists: true,
+                url: logoUrl,
+                version: version
+            });
+
+            applyLogo(deal, logoUrl);
+
+        } finally {
+            processing = false;
+            setTimeout(processQueue, 100); // Throttle requests
+        }
+    };
+
+    const applyLogo = (deal, logoUrl) => {
+        if (!logoUrl) return;
+
+        // Set deal content styles
+        deal.style.position = 'relative';
+        deal.style.overflow = 'hidden';
+
+        // Ensure content stays above logo
+        Array.from(deal.children).forEach(child => {
+            child.style.position = 'relative';
+            child.style.zIndex = '1';
+        });
+
+        // Create and style logo container
+        const container = document.createElement('div');
+        container.style.cssText = `
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 200px;
+            height: 200px;
+            background-image: url(${logoUrl});
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            border-radius: 50%;
+            opacity: 0.25;
+            pointer-events: none;
+            z-index: 0;
+        `;
+
+        deal.insertBefore(container, deal.firstChild);
+        deal.setAttribute(PROCESSED_ATTR, 'true');
+    };
+
+    // Queue new deals for processing
+    const processDeal = (deal) => {
+        if (deal.hasAttribute(PROCESSED_ATTR)) return;
+        queue.push(deal);
+        processQueue();
+    };
+
+    // Process all deals
+    const processDeals = () => {
+        document.querySelectorAll('article.thread--deal:not([data-bg-processed])')
+            .forEach(processDeal);
+    };
+
+    // Observer for new deals
+    const observer = new MutationObserver(() => {
+        processDeals();
+    });
+
+    // Start observing
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
+    // Initial processing
+    processDeals();
+})();
