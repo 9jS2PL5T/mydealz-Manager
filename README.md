@@ -8,4 +8,6 @@ Funktionen
   
 ![grafik](https://github.com/user-attachments/assets/865d5adb-06e6-42a8-bcb5-8c20a56d24c6)
 
-![grafik](https://github.com/user-attachments/assets/4a0e2af8-970d-4b46-9b74-c444c5f074d1)
+![grafik](https://github.com/user-attachments/assets/35dc5379-4e42-4bf8-9c6c-2af862e84428)
+
+![grafik](https://github.com/user-attachments/assets/477abafe-6d4d-4069-9548-ec41081b2e0f)
