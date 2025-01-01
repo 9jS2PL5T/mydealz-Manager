@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         mydealz Script 1.8.0
+// @name         mydealz Script
 // @namespace    http://tampermonkey.net/
 // @version      1.8.0
 // @description  mydealz Deal-Management: Deals filtern und ausblenden, alle Einstellungen per UI verwalten.
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 // Versions-Änderungen:
-// Backup erhält nun Zeitstempel im Dateinamen.
+// Händler lassen sich nun mittels Button ausblenden. Vereinfachtes Hinzufügen von Wörtern mit Vorschlägen aus aktuellem Titel. Diverse UI Verbesserungen.
 
 // Einbinden von Font Awesome für Icons
 const fontAwesomeLink = document.createElement('link');
