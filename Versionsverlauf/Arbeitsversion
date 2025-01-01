@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         mydealz Script 0.0.0
+// @name         mydealz Script 1.8.1
 // @namespace    http://tampermonkey.net/
-// @version      0.0.0
+// @version      1.8.1
 // @description  mydealz Deal-Management: Deals filtern und ausblenden, alle Einstellungen per UI verwalten.
 // @author       Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister), Flo (https://www.mydealz.de/profile/Basics0119)
 // @license      MIT
@@ -21,8 +21,8 @@ document.head.appendChild(fontAwesomeLink);
 
 // Add constant for touch detection
 const IS_TOUCH_DEVICE = ('ontouchstart' in window) ||
-                       (navigator.maxTouchPoints > 0) ||
-                       (navigator.msMaxTouchPoints > 0);
+      (navigator.maxTouchPoints > 0) ||
+      (navigator.msMaxTouchPoints > 0);
 
 // --- 1. Initial Setup ---
 const EXCLUDE_WORDS_KEY = 'excludeWords';
@@ -713,220 +713,192 @@ function getWordsFromTitle(dealElement) {
 
 // Add debug logging to settings UI creation
 function createSettingsUI() {
-    console.log('Creating settings UI'); // Debug log
-    console.log('isSettingsOpen:', isSettingsOpen); // Debug log
+    if (isSettingsOpen) return;
+    isSettingsOpen = true;
 
-    if (isSettingsOpen) {
-        console.log('Settings already open, returning'); // Debug log
-        return;
+    settingsDiv = document.createElement('div');
+    settingsDiv.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: 15px;
+        background: #f9f9f9;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        z-index: 1000;
+        max-width: 300px;
+        overflow: auto;
+    `;
+
+    // Get merchant info from current deal
+    let merchantName = null;
+    let showMerchantButton = false;
+
+    if (dealThatOpenedSettings) {
+        const merchantLink = dealThatOpenedSettings.querySelector('a[data-t="merchantLink"]');
+        if (merchantLink) {
+            merchantName = merchantLink.textContent.trim();
+            showMerchantButton = true;
+        }
     }
 
-    isSettingsOpen = true;
-    console.log('dealThatOpenedSettings in createSettingsUI:', dealThatOpenedSettings); // Debug log
+    // Process articles when opening settings
+    processArticles();
 
-    try {
-        settingsDiv = document.createElement('div');
-        settingsDiv.style.cssText = `
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            padding: 15px;
-            background: #f9f9f9;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            z-index: 1000;
-            max-width: 300px;
-            overflow: auto;
-        `;
+    const currentExcludeWords = JSON.parse(localStorage.getItem(EXCLUDE_WORDS_KEY)) || [];
+    const currentExcludeMerchantIDs = JSON.parse(localStorage.getItem(EXCLUDE_MERCHANTS_KEY)) || [];
 
-        // Get merchant info from current deal
-        let merchantName = null;
-        let showMerchantButton = false;
+    const dealWords = dealThatOpenedSettings ? getWordsFromTitle(dealThatOpenedSettings) : [];
 
-        if (dealThatOpenedSettings) {
-            const merchantLink = dealThatOpenedSettings.querySelector('a[data-t="merchantLink"]');
-            if (merchantLink) {
-                merchantName = merchantLink.textContent.trim();
-                showMerchantButton = true;
-            }
-        }
+    // Conditional merchant button HTML - only show if merchant exists
+    const merchantButtonHtml = showMerchantButton ? `
+        <button id="hideMerchantButton" style="width: 100%; margin-top: 5px; padding: 5px 10px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
+            <i class="fas fa-store-slash"></i> Alle Deals von <span style="font-weight: bold">${merchantName}</span> ausblenden
+        </button>
+    ` : '';
 
-        // Process articles when opening settings
-        processArticles();
+    settingsDiv.innerHTML = `
+    <h4 style="margin-bottom: 15px;">Einstellungen zum Ausblenden</h4>
 
-        const currentExcludeWords = JSON.parse(localStorage.getItem(EXCLUDE_WORDS_KEY)) || [];
-        const currentExcludeMerchantIDs = JSON.parse(localStorage.getItem(EXCLUDE_MERCHANTS_KEY)) || [];
+    <!-- Word Input Section -->
+    <div style="margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 5px;">
+            <input list="wordSuggestions"
+                id="newWordInput"
+                placeholder="Neues Wort..."
+                title="Deals mit hier eingetragenen Wörtern im Titel werden ausgeblendet."
+                style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 3px;">
+            <datalist id="wordSuggestions">
+                ${dealWords.map(word => `<option value="${word}">`).join('')}
+        </datalist>
+        <button id="addWordButton"
+            style="padding: 8px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
+            <i class="fas fa-plus"></i>
+        </button>
+    </div>
+</div>
 
-        const dealWords = dealThatOpenedSettings ? getWordsFromTitle(dealThatOpenedSettings) : [];
+    <!-- Merchant Hide Button -->
+    ${merchantButtonHtml}
 
-        // Conditional merchant button HTML - only show if merchant exists
-        const merchantButtonHtml = showMerchantButton ? `
-            <button id="hideMerchantButton" style="width: 100%; margin-top: 5px; padding: 5px 10px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
-                <i class="fas fa-store-slash"></i> Alle Deals von <span style="font-weight: bold">${merchantName}</span> ausblenden
-            </button>
-        ` : '';
-
-        settingsDiv.innerHTML = `
-        <h4 style="margin-bottom: 15px;">Einstellungen zum Ausblenden</h4>
-
-        <!-- Word Input Section -->
-        <div style="margin-bottom: 20px;">
-            <div style="display: flex; align-items: center; gap: 5px;">
-                <input list="wordSuggestions"
-                    id="newWordInput"
-                    placeholder="Neues Wort..."
-                    title="Deals mit hier eingetragenen Wörtern im Titel werden ausgeblendet."
-                    style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 3px;">
-                <datalist id="wordSuggestions">
-                    ${dealWords.map(word => `<option value="${word}">`).join('')}
-            </datalist>
-            <button id="addWordButton"
-                style="padding: 8px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
-                <i class="fas fa-plus"></i>
-            </button>
-        </div>
+    <!-- List Management Section -->
+    <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
+        <button id="showWordsListButton"
+            style="width: 100%; padding: 8px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
+            <i class="fas fa-list"></i> Wortfilter verwalten
+        </button>
+        <button id="showMerchantListButton"
+            style="width: 100%; padding: 8px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
+            <i class="fas fa-store"></i> Händlerfilter verwalten
+        </button>
     </div>
 
-        <!-- Merchant Hide Button -->
-        ${merchantButtonHtml}
+    <!-- Action Buttons -->
+    <div style="margin-top: 20px; text-align: right; display: flex; justify-content: flex-end; gap: 5px;">
+        <button id="createBackupButton" style="padding: 8px; background: none; border: none; cursor: pointer;" title="Backup erstellen">
+            <i class="fas fa-file-export"></i>
+        </button>
+        <button id="restoreBackupButton" style="padding: 8px; background: none; border: none; cursor: pointer;" title="Wiederherstellen">
+            <i class="fas fa-file-import"></i>
+        </button>
+        <input type="file" id="restoreFileInput" style="display: none;" />
+        <button id="closeSettingsButton" style="padding: 8px; background: none; border: none; cursor: pointer;" title="Schließen">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>`;
 
-        <!-- List Management Section -->
-        <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
-            <button id="showWordsListButton"
-                style="width: 100%; padding: 8px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
-                <i class="fas fa-list"></i> Wortfilter verwalten
-            </button>
-            <button id="showMerchantListButton"
-                style="width: 100%; padding: 8px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
-                <i class="fas fa-store"></i> Händlerfilter verwalten
-            </button>
-        </div>
+    // Explicitly add to DOM
+    document.body.appendChild(settingsDiv);
+    setupClickOutsideHandler();
 
-        <!-- Action Buttons -->
-        <div style="margin-top: 20px; text-align: right; display: flex; justify-content: flex-end; gap: 5px;">
-            <button id="createBackupButton" style="padding: 8px; background: none; border: none; cursor: pointer;" title="Backup erstellen">
-                <i class="fas fa-file-export"></i>
-            </button>
-            <button id="restoreBackupButton" style="padding: 8px; background: none; border: none; cursor: pointer;" title="Wiederherstellen">
-                <i class="fas fa-file-import"></i>
-            </button>
-            <input type="file" id="restoreFileInput" style="display: none;" />
-            <button id="closeSettingsButton" style="padding: 8px; background: none; border: none; cursor: pointer;" title="Schließen">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>`;
+    // Add word input handler
+    document.getElementById('addWordButton').addEventListener('click', () => {
+        const newWord = document.getElementById('newWordInput').value.trim();
+        if (newWord && !excludeWords.includes(newWord)) {
+            // Add new word at start of array
+            excludeWords.unshift(newWord);
+            saveExcludeWords(excludeWords);
+            document.getElementById('newWordInput').value = '';
+            processArticles();
+        }
+    });
 
-        // Explicitly add to DOM
-        document.body.appendChild(settingsDiv);
-        setupClickOutsideHandler();
-        console.log('Settings UI added to DOM');
+    // Add enter key handler for input
+    document.getElementById('newWordInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            document.getElementById('addWordButton').click();
+        }
+    });
 
-        // Add word input handler
-        document.getElementById('addWordButton').addEventListener('click', () => {
-            const newWord = document.getElementById('newWordInput').value.trim();
-            if (newWord && !excludeWords.includes(newWord)) {
-                // Add new word at start of array
-                excludeWords.unshift(newWord);
-                saveExcludeWords(excludeWords);
-                document.getElementById('newWordInput').value = '';
+    // Only add merchant button listener if button exists
+    const hideMerchantButton = document.getElementById('hideMerchantButton');
+    if (hideMerchantButton && showMerchantButton) {
+        hideMerchantButton.addEventListener('click', () => {
+            if (!dealThatOpenedSettings) return;
+
+            const merchantLink = dealThatOpenedSettings.querySelector('a[href*="merchant-id="]');
+            if (!merchantLink) return;
+
+            const merchantIDMatch = merchantLink.getAttribute('href').match(/merchant-id=(\d+)/);
+            if (!merchantIDMatch) return;
+
+            const merchantID = merchantIDMatch[1];
+            const merchantName = dealThatOpenedSettings.querySelector('a[data-t="merchantLink"]').textContent.trim();
+
+            // Load current data
+            const merchantsData = loadExcludeMerchants();
+
+            // Check if ID already exists
+            if (!merchantsData.some(m => m.id === merchantID)) {
+                // Add new merchant at start of array
+                merchantsData.unshift({ id: merchantID, name: merchantName });
+                saveExcludeMerchants(merchantsData);
                 processArticles();
             }
         });
-
-        // Add enter key handler for input
-        document.getElementById('newWordInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                document.getElementById('addWordButton').click();
-            }
-        });
-
-        // Only add merchant button listener if button exists
-        const hideMerchantButton = document.getElementById('hideMerchantButton');
-        if (hideMerchantButton && showMerchantButton) {
-            hideMerchantButton.addEventListener('click', () => {
-                if (!dealThatOpenedSettings) return;
-
-                const merchantLink = dealThatOpenedSettings.querySelector('a[href*="merchant-id="]');
-                if (!merchantLink) return;
-
-                const merchantIDMatch = merchantLink.getAttribute('href').match(/merchant-id=(\d+)/);
-                if (!merchantIDMatch) return;
-
-                const merchantID = merchantIDMatch[1];
-                const merchantName = dealThatOpenedSettings.querySelector('a[data-t="merchantLink"]').textContent.trim();
-
-                // Load current data
-                const merchantsData = loadExcludeMerchants();
-
-                // Check if ID already exists
-                if (!merchantsData.some(m => m.id === merchantID)) {
-                    // Add new merchant at start of array
-                    merchantsData.unshift({ id: merchantID, name: merchantName });
-                    saveExcludeMerchants(merchantsData);
-                    processArticles();
-                }
-            });
-        }
-
-        // Add merchant list button listener
-        document.getElementById('showMerchantListButton').addEventListener('click', () => {
-            closeActiveSubUI();
-            createMerchantListUI();
-            activeSubUI = 'merchant';
-        });
-
-        // Add words list button listener
-        document.getElementById('showWordsListButton').addEventListener('click', () => {
-            closeActiveSubUI();
-            createExcludeWordsUI();
-            activeSubUI = 'words';
-        });
-
-        // Always ensure close button works
-        document.getElementById('closeSettingsButton').addEventListener('click', (e) => {
-            e.stopPropagation(); // Prevent event bubbling
-            if (settingsDiv?.parentNode) {
-                settingsDiv.remove();
-                isSettingsOpen = false;
-            }
-            // Close merchant list if open
-            if (merchantListDiv && merchantListDiv.parentNode) {
-                merchantListDiv.remove();
-            }
-            // Close words list if open
-            if (wordsListDiv && wordsListDiv.parentNode) {
-                wordsListDiv.remove();
-            }
-        });
-
-        // Backup/Restore Event Listeners
-        document.getElementById('createBackupButton').addEventListener('click', backupData);
-
-        document.getElementById('restoreBackupButton').addEventListener('click', () => {
-            document.getElementById('restoreFileInput').click();
-        });
-
-        document.getElementById('restoreFileInput').addEventListener('change', restoreData);
-    } catch (error) {
-        console.error('Error creating settings UI:', error);
-        isSettingsOpen = false;
     }
+
+    // Add merchant list button listener
+    document.getElementById('showMerchantListButton').addEventListener('click', () => {
+        closeActiveSubUI();
+        createMerchantListUI();
+        activeSubUI = 'merchant';
+    });
+
+    // Add words list button listener
+    document.getElementById('showWordsListButton').addEventListener('click', () => {
+        closeActiveSubUI();
+        createExcludeWordsUI();
+        activeSubUI = 'words';
+    });
+
+    // Always ensure close button works
+    document.getElementById('closeSettingsButton').addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent event bubbling
+        if (settingsDiv?.parentNode) {
+            settingsDiv.remove();
+            isSettingsOpen = false;
+        }
+        // Close merchant list if open
+        if (merchantListDiv && merchantListDiv.parentNode) {
+            merchantListDiv.remove();
+        }
+        // Close words list if open
+        if (wordsListDiv && wordsListDiv.parentNode) {
+            wordsListDiv.remove();
+        }
+    });
+
+    // Backup/Restore Event Listeners
+    document.getElementById('createBackupButton').addEventListener('click', backupData);
+
+    document.getElementById('restoreBackupButton').addEventListener('click', () => {
+        document.getElementById('restoreFileInput').click();
+    });
+
+    document.getElementById('restoreFileInput').addEventListener('change', restoreData);
 }
-
-// Initial processing and observer setup
-document.addEventListener('DOMContentLoaded', () => {
-    processArticles();
-});
-
-document.addEventListener('DOMContentLoaded', () => {
-    addSettingsButton();
-    addHideButtons();
-});
-
-window.addEventListener('load', () => {
-    processArticles();
-});
 
 function initObserver() {
     observer.observe(document.body, {
@@ -977,68 +949,39 @@ function addWordToList(word, wordsList) {
 }
 
 function setupClickOutsideHandler() {
-    console.log('Setting up click outside handler');
-
-    // Remove any existing handler
     if (uiClickOutsideHandler) {
-        console.log('Removing existing handler');
         document.removeEventListener('click', uiClickOutsideHandler);
     }
 
     uiClickOutsideHandler = (e) => {
-        console.log('Click outside handler fired');
+        const settingsOpen = settingsDiv?.parentNode;
+        const merchantsOpen = merchantListDiv?.parentNode;
+        const wordsOpen = wordsListDiv?.parentNode;
 
-        // Check which UIs are open
-        const settingsOpen = settingsDiv && settingsDiv.parentNode;
-        const merchantsOpen = merchantListDiv && merchantListDiv.parentNode;
-        const wordsOpen = wordsListDiv && wordsListDiv.parentNode;
-
-        console.log('Open UIs:', {
-            settings: settingsOpen,
-            merchants: merchantsOpen,
-            words: wordsOpen
-        });
-
-        // Ignore clicks on UI elements and their children
         if (e.target.closest('.settings-button') ||
             e.target.closest('#showMerchantListButton') ||
             e.target.closest('#showWordsListButton')) {
-            console.log('Ignoring click on UI button');
             return;
         }
 
-        // Check if click was outside all open UIs
         const clickedOutside = (!settingsOpen || !settingsDiv.contains(e.target)) &&
               (!merchantsOpen || !merchantListDiv.contains(e.target)) &&
               (!wordsOpen || !wordsListDiv.contains(e.target));
 
-        console.log('Clicked outside:', clickedOutside);
-
         if (clickedOutside) {
-            console.log('Closing all UIs');
-
             if (settingsOpen) {
                 settingsDiv.remove();
                 isSettingsOpen = false;
             }
-            if (merchantsOpen) {
-                merchantListDiv.remove();
-            }
-            if (wordsOpen) {
-                wordsListDiv.remove();
-            }
+            if (merchantsOpen) merchantListDiv.remove();
+            if (wordsOpen) wordsListDiv.remove();
 
-            // Clean up handler
             document.removeEventListener('click', uiClickOutsideHandler);
             uiClickOutsideHandler = null;
         }
     };
 
-    // Add handler with delay
-    setTimeout(() => {
-        document.addEventListener('click', uiClickOutsideHandler);
-        console.log('Click outside handler attached');
-    }, 100);
+    setTimeout(() => document.addEventListener('click', uiClickOutsideHandler), 100);
 }
 
 // Add helper function to close sub-UIs
