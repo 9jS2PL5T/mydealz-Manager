@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      1.8.0
 // @description  mydealz Deal-Management: Deals filtern und ausblenden, alle Einstellungen per UI verwalten.
-// @author       Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister), Flo (https://www.mydealz.de/profile/Basics0119)
+// @author       Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister), Flo (https://www.mydealz.de/profile/Basics0119) (https://github.com/9jS2PL5T)
 // @license      MIT
 // @match        https://www.mydealz.de/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=mydealz.de
