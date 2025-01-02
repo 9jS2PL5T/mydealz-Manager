@@ -945,12 +945,13 @@ function createSettingsUI() {
             }
         });
 
-        // Nur in Eingabefeld einfügen statt direkt hinzufügen
+        // Wörter mit Leerzeichen anfügen und Liste offen lassen
         document.querySelectorAll('.touch-word-item').forEach(item => {
             item.addEventListener('click', () => {
                 const word = item.textContent.trim();
-                newWordInput.value = word; // Nur in Input einfügen
-                touchWordList.style.display = 'none';
+                const currentValue = newWordInput.value.trim();
+                newWordInput.value = currentValue ? `${currentValue} ${word}` : word;
+                // touchWordList.style.display = 'none'; // Remove this line to keep list open
             });
         });
     }
