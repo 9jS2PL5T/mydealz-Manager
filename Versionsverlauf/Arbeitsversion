@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 // Versions-Änderungen:
-// Fix: Position des 'Deal ausblenden' Button wurde korrigiert. Der Button ist nun auch bei abgelaufenen Deals nutzbar.
+//
 
 // Einbinden von Font Awesome für Icons
 const fontAwesomeLink = document.createElement('link');
@@ -314,15 +314,22 @@ function addHideButtons() {
     deals.forEach(deal => {
         if (deal.hasAttribute('data-button-added')) return;
 
+        // Check for expired status
+        const isExpired = deal.querySelector('.color--text-TranslucentSecondary .size--all-s')?.textContent.includes('Abgelaufen');
+
+        // Get temperature container
         const voteTemp = deal.querySelector('.cept-vote-temp');
         if (!voteTemp) return;
 
-        const tempSpan = voteTemp.querySelector('span');
-        if (!tempSpan) return;
-
-        // Remove any existing popover
+        // Remove popover
         const popover = voteTemp.querySelector('.popover-origin');
         if (popover) popover.remove();
+
+        // Find temperature span for expired deals
+        const tempSpan = isExpired ? voteTemp.querySelector('span') : null;
+        const targetElement = isExpired ? tempSpan : voteTemp;
+
+        if (!targetElement) return;
 
         const hideButtonContainer = document.createElement('div');
         hideButtonContainer.style.cssText = `
@@ -359,15 +366,15 @@ function addHideButtons() {
             pointer-events: all;
         `;
 
-        // Ensure proper positioning relative to span
-        if (!tempSpan.style.position) {
-            tempSpan.style.position = 'relative';
+        // Position relative to container
+        if (!targetElement.style.position) {
+            targetElement.style.position = 'relative';
         }
 
         if (IS_TOUCH_DEVICE) {
             let buttonVisible = false;
 
-            tempSpan.addEventListener('touchstart', (e) => {
+            targetElement.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
 
@@ -382,17 +389,17 @@ function addHideButtons() {
                 }
             }, true);
 
-            tempSpan.addEventListener('touchend', () => {
+            targetElement.addEventListener('touchend', () => {
                 if (!buttonVisible) {
                     hideButtonContainer.style.display = 'none';
                 }
             }, true);
         } else {
-            tempSpan.addEventListener('mouseenter', () => {
+            targetElement.addEventListener('mouseenter', () => {
                 hideButtonContainer.style.display = 'block';
             }, true);
 
-            tempSpan.addEventListener('mouseleave', () => {
+            targetElement.addEventListener('mouseleave', () => {
                 hideButtonContainer.style.display = 'none';
             }, true);
 
@@ -408,7 +415,7 @@ function addHideButtons() {
         }
 
         hideButtonContainer.appendChild(hideButton);
-        tempSpan.appendChild(hideButtonContainer);
+        targetElement.appendChild(hideButtonContainer);
         deal.setAttribute('data-button-added', 'true');
     });
 }
