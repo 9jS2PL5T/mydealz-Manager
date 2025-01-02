@@ -714,10 +714,18 @@ function createExcludeWordsUI() {
 }
 
 function getWordsFromTitle(dealElement) {
-    const title = dealElement.querySelector('.thread-title').textContent;
-    return title.split(/\s+/)
-        .map(word => word.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, ''))
-        .filter(word => word.length > 2);
+    if (!dealElement) return [];
+
+    const titleElement = dealElement.querySelector('.thread-title');
+    if (!titleElement) return [];
+
+    const titleText = titleElement.textContent.trim();
+
+    // Verbesserte Wortextraktion
+    return titleText.split(/[\s,.-]+/)
+        .map(word => word.trim().replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, ''))
+        .filter(word => word.length > 2)
+        .filter((word, index, self) => self.indexOf(word) === index); // Duplikate entfernen
 }
 
 // Add debug logging to settings UI creation
@@ -767,6 +775,7 @@ function createSettingsUI() {
         </button>
     ` : '';
 
+    // Datalist mit korrekten Attributen erstellen
     settingsDiv.innerHTML = `
     <h4 style="margin-bottom: 15px;">Einstellungen zum Ausblenden</h4>
 
@@ -775,12 +784,13 @@ function createSettingsUI() {
         <div style="display: flex; align-items: center; gap: 5px;">
             <input list="wordSuggestions"
                 id="newWordInput"
+                autocomplete="off"
                 placeholder="Neues Wort..."
                 title="Deals mit hier eingetragenen Wörtern im Titel werden ausgeblendet."
                 style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 3px;">
             <datalist id="wordSuggestions">
-                ${dealWords.map(word => `<option value="${word}">`).join('')}
-        </datalist>
+                ${dealWords.map(word => `<option value="${word}">${word}</option>`).join('\n')}
+            </datalist>
         <button id="addWordButton"
             style="padding: 8px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
             <i class="fas fa-plus"></i>
