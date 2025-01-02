@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         mydealz Script 1.8.1
+// @name         mydealz Script 1.8.2
 // @namespace    http://tampermonkey.net/
-// @version      1.8.1
+// @version      1.8.2
 // @description  mydealz Deal-Management: Deals filtern und ausblenden, alle Einstellungen per UI verwalten.
 // @author       Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister), Flo (https://www.mydealz.de/profile/Basics0119)
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 // Versions-Änderungen:
-// Backup erhält nun Zeitstempel im Dateinamen.
+// Fix: Position des 'Deal ausblenden' Button wurde korrigiert. Der Button ist nun auch bei abgelaufenen Deals nutzbar.
 
 // Einbinden von Font Awesome für Icons
 const fontAwesomeLink = document.createElement('link');
@@ -246,7 +246,6 @@ hideButton.addEventListener('click', function(event) {
 // Add debug logging to settings button click handler
 function addSettingsButton() {
     const deals = document.querySelectorAll('article.thread--deal, article.thread--voucher');
-    console.log('Found deals:', deals.length); // Debug log
 
     deals.forEach(deal => {
         if (deal.hasAttribute('data-settings-added')) return;
@@ -269,15 +268,13 @@ function addSettingsButton() {
             z-index: 1000;
         `;
 
-        settingsBtn.addEventListener('click', function(e) {
-            console.log('Settings button clicked'); // Debug log
+        settingsBtn.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
-            console.log('Deal element:', deal); // Debug log
             dealThatOpenedSettings = deal;
-            console.log('dealThatOpenedSettings set to:', dealThatOpenedSettings); // Debug log
             createSettingsUI();
-        });
+            return false;
+        };
 
         const settingsContainer = document.createElement('div');
         settingsContainer.className = 'vote-box settings-container';
@@ -295,18 +292,8 @@ function addSettingsButton() {
             z-index: 1000;
         `;
 
-        // Direct click handler on button
-        settingsBtn.onclick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            dealThatOpenedSettings = deal;
-            createSettingsUI();
-            return false;
-        };
-
         settingsContainer.appendChild(settingsBtn);
 
-        // Find insertion point
         const voteBox = deal.querySelector('.vote-box');
         if (voteBox && voteBox.parentNode) {
             voteBox.parentNode.insertBefore(settingsContainer, voteBox.nextSibling);
@@ -330,7 +317,10 @@ function addHideButtons() {
         const voteTemp = deal.querySelector('.cept-vote-temp');
         if (!voteTemp) return;
 
-        // Remove popover
+        const tempSpan = voteTemp.querySelector('span');
+        if (!tempSpan) return;
+
+        // Remove any existing popover
         const popover = voteTemp.querySelector('.popover-origin');
         if (popover) popover.remove();
 
@@ -369,11 +359,15 @@ function addHideButtons() {
             pointer-events: all;
         `;
 
-        // Touch device handling
-        if ('ontouchstart' in window) {
+        // Ensure proper positioning relative to span
+        if (!tempSpan.style.position) {
+            tempSpan.style.position = 'relative';
+        }
+
+        if (IS_TOUCH_DEVICE) {
             let buttonVisible = false;
 
-            voteTemp.addEventListener('touchstart', (e) => {
+            tempSpan.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
 
@@ -381,7 +375,6 @@ function addHideButtons() {
                     buttonVisible = true;
                     hideButtonContainer.style.display = 'block';
                 } else {
-                    // Second touch on container: hide deal
                     const dealId = deal.getAttribute('id');
                     hiddenDeals.push(dealId);
                     saveHiddenDeals();
@@ -389,19 +382,17 @@ function addHideButtons() {
                 }
             }, true);
 
-            // Reset visibility when touch moves outside
-            voteTemp.addEventListener('touchend', () => {
+            tempSpan.addEventListener('touchend', () => {
                 if (!buttonVisible) {
                     hideButtonContainer.style.display = 'none';
                 }
             }, true);
         } else {
-            // Desktop hover behavior
-            voteTemp.addEventListener('mouseenter', () => {
+            tempSpan.addEventListener('mouseenter', () => {
                 hideButtonContainer.style.display = 'block';
             }, true);
 
-            voteTemp.addEventListener('mouseleave', () => {
+            tempSpan.addEventListener('mouseleave', () => {
                 hideButtonContainer.style.display = 'none';
             }, true);
 
@@ -417,7 +408,7 @@ function addHideButtons() {
         }
 
         hideButtonContainer.appendChild(hideButton);
-        voteTemp.appendChild(hideButtonContainer);
+        tempSpan.appendChild(hideButtonContainer);
         deal.setAttribute('data-button-added', 'true');
     });
 }
@@ -689,10 +680,21 @@ function createExcludeWordsUI() {
     // Add delete handlers
     document.querySelectorAll('.delete-word').forEach(button => {
         button.addEventListener('click', (e) => {
-            const wordToDelete = e.target.closest('button').dataset.word;
+            // Prevent event bubbling
+            e.preventDefault();
+            e.stopPropagation();
+
+            const deleteButton = e.target.closest('.delete-word');
+            if (!deleteButton) return;
+
+            const wordToDelete = deleteButton.dataset.word;
             excludeWords = excludeWords.filter(word => word !== wordToDelete);
             saveExcludeWords(excludeWords);
-            e.target.closest('.word-item').remove();
+
+            // Remove only the specific word item
+            deleteButton.closest('.word-item').remove();
+
+            // Update deals without closing UI
             processArticles();
         });
     });
