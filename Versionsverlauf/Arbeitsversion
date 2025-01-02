@@ -776,10 +776,7 @@ function createSettingsUI() {
     ` : '';
 
     // Datalist mit korrekten Attributen erstellen
-    settingsDiv.innerHTML = `
-    <h4 style="margin-bottom: 15px;">Einstellungen zum Ausblenden</h4>
-
-    <!-- Word Input Section -->
+    const wordInputSection = `
     <div style="margin-bottom: 20px;">
         <div style="display: flex; align-items: center; gap: 5px;">
             <input list="wordSuggestions"
@@ -791,41 +788,55 @@ function createSettingsUI() {
             <datalist id="wordSuggestions">
                 ${dealWords.map(word => `<option value="${word}">${word}</option>`).join('\n')}
             </datalist>
-        <button id="addWordButton"
-            style="padding: 8px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
-            <i class="fas fa-plus"></i>
-        </button>
-    </div>
-</div>
-
-    <!-- Merchant Hide Button -->
-    ${merchantButtonHtml}
-
-    <!-- List Management Section -->
-    <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
-        <button id="showWordsListButton"
-            style="width: 100%; padding: 8px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
-            <i class="fas fa-list"></i> Wortfilter verwalten
-        </button>
-        <button id="showMerchantListButton"
-            style="width: 100%; padding: 8px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
-            <i class="fas fa-store"></i> Händlerfilter verwalten
-        </button>
-    </div>
-
-    <!-- Action Buttons -->
-    <div style="margin-top: 20px; text-align: right; display: flex; justify-content: flex-end; gap: 5px;">
-        <button id="createBackupButton" style="padding: 8px; background: none; border: none; cursor: pointer;" title="Backup erstellen">
-            <i class="fas fa-file-export"></i>
-        </button>
-        <button id="restoreBackupButton" style="padding: 8px; background: none; border: none; cursor: pointer;" title="Wiederherstellen">
-            <i class="fas fa-file-import"></i>
-        </button>
-        <input type="file" id="restoreFileInput" style="display: none;" />
-        <button id="closeSettingsButton" style="padding: 8px; background: none; border: none; cursor: pointer;" title="Schließen">
-            <i class="fas fa-times"></i>
-        </button>
+            <button id="addWordButton"
+                style="padding: 8px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
+                <i class="fas fa-plus"></i>
+            </button>
+        </div>
+        ${IS_TOUCH_DEVICE ? `
+        <div id="touchWordList" style="display: none; margin-top: 10px; max-height: 200px; overflow-y: auto; background: white; border: 1px solid #ccc; border-radius: 3px;">
+            ${dealWords.map(word => `
+                <div class="touch-word-item" style="padding: 10px; border-bottom: 1px solid #eee; cursor: pointer;">
+                    ${word}
+                </div>
+            `).join('')}
+        </div>
+        ` : ''}
     </div>`;
+
+    // Update the settingsDiv HTML to include the new wordInputSection
+    settingsDiv.innerHTML = `
+        <h4 style="margin-bottom: 15px;">Einstellungen zum Ausblenden</h4>
+        ${wordInputSection}
+        <!-- rest of the HTML stays the same -->
+        <!-- Merchant Hide Button -->
+        ${merchantButtonHtml}
+
+        <!-- List Management Section -->
+        <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
+            <button id="showWordsListButton"
+                style="width: 100%; padding: 8px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
+                <i class="fas fa-list"></i> Wortfilter verwalten
+            </button>
+            <button id="showMerchantListButton"
+                style="width: 100%; padding: 8px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
+                <i class="fas fa-store"></i> Händlerfilter verwalten
+            </button>
+        </div>
+
+        <!-- Action Buttons -->
+        <div style="margin-top: 20px; text-align: right; display: flex; justify-content: flex-end; gap: 5px;">
+            <button id="createBackupButton" style="padding: 8px; background: none; border: none; cursor: pointer;" title="Backup erstellen">
+                <i class="fas fa-file-export"></i>
+            </button>
+            <button id="restoreBackupButton" style="padding: 8px; background: none; border: none; cursor: pointer;" title="Wiederherstellen">
+                <i class="fas fa-file-import"></i>
+            </button>
+            <input type="file" id="restoreFileInput" style="display: none;" />
+            <button id="closeSettingsButton" style="padding: 8px; background: none; border: none; cursor: pointer;" title="Schließen">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>`;
 
     // Explicitly add to DOM
     document.body.appendChild(settingsDiv);
@@ -917,6 +928,33 @@ function createSettingsUI() {
     });
 
     document.getElementById('restoreFileInput').addEventListener('change', restoreData);
+
+    if (IS_TOUCH_DEVICE) {
+        const newWordInput = document.getElementById('newWordInput');
+        const touchWordList = document.getElementById('touchWordList');
+
+        // Show word list when tapping the input
+        newWordInput.addEventListener('focus', () => {
+            touchWordList.style.display = 'block';
+        });
+
+        // Hide word list when tapping outside
+        document.addEventListener('click', (e) => {
+            if (!touchWordList.contains(e.target) && e.target !== newWordInput) {
+                touchWordList.style.display = 'none';
+            }
+        });
+
+        // Handle word selection
+        document.querySelectorAll('.touch-word-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const word = item.textContent.trim();
+                newWordInput.value = word;
+                touchWordList.style.display = 'none';
+                document.getElementById('addWordButton').click();
+            });
+        });
+    }
 }
 
 function initObserver() {
