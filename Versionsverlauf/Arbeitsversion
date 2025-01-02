@@ -945,13 +945,12 @@ function createSettingsUI() {
             }
         });
 
-        // Handle word selection
+        // Nur in Eingabefeld einfügen statt direkt hinzufügen
         document.querySelectorAll('.touch-word-item').forEach(item => {
             item.addEventListener('click', () => {
                 const word = item.textContent.trim();
-                newWordInput.value = word;
+                newWordInput.value = word; // Nur in Input einfügen
                 touchWordList.style.display = 'none';
-                document.getElementById('addWordButton').click();
             });
         });
     }
