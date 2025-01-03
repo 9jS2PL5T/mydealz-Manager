@@ -12,6 +12,9 @@
 const LOGO_ENABLED_KEY = 'merchantLogoEnabled';
 const TITLE_CLEAN_KEY = 'merchantTitleClean';
 
+const LOGO_CACHE_KEY_PREFIX = 'logo_cache_';
+const CACHE_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 1 week in ms
+
 (function() {
     'use strict';
 
@@ -190,13 +193,10 @@ const TITLE_CLEAN_KEY = 'merchantTitleClean';
 
     // Add cache management
     const logoCache = {
-        // Cache in localStorage to persist between page loads
-        set: (merchantId, status) => {
+        set: (merchantId, data) => {
             try {
-                localStorage.setItem(`logo_${merchantId}`, JSON.stringify({
-                    exists: status.exists,
-                    url: status.url,
-                    version: status.version,
+                localStorage.setItem(`${LOGO_CACHE_KEY_PREFIX}${merchantId}`, JSON.stringify({
+                    ...data,
                     timestamp: Date.now()
                 }));
             } catch (e) {
@@ -204,21 +204,31 @@ const TITLE_CLEAN_KEY = 'merchantTitleClean';
             }
         },
 
-        get: function(merchantId) { // Changed to standard JavaScript function syntax
+        get: (merchantId) => {
             try {
-                const data = localStorage.getItem(`logo_${merchantId}`);
+                const data = localStorage.getItem(`${LOGO_CACHE_KEY_PREFIX}${merchantId}`);
                 if (!data) return null;
 
                 const parsed = JSON.parse(data);
-                // Expire after 24h
-                if (Date.now() - parsed.timestamp > 24 * 60 * 60 * 1000) {
-                    localStorage.removeItem(`logo_${merchantId}`);
+                // Expire after 1 week
+                if (Date.now() - parsed.timestamp > CACHE_EXPIRY) {
+                    localStorage.removeItem(`${LOGO_CACHE_KEY_PREFIX}${merchantId}`);
                     return null;
                 }
-                return parsed.status;
+                return parsed;
             } catch (e) {
-                console.error(`Error getting logo cache for merchant ${merchantId}:`, e);
+                console.debug('[Logo Cache] Read failed:', e);
                 return null;
+            }
+        },
+
+        clear: () => {
+            try {
+                Object.keys(localStorage)
+                    .filter(key => key.startsWith(LOGO_CACHE_KEY_PREFIX))
+                    .forEach(key => localStorage.removeItem(key));
+            } catch (e) {
+                console.debug('[Logo Cache] Clear failed:', e);
             }
         }
     };
@@ -245,9 +255,6 @@ const TITLE_CLEAN_KEY = 'merchantTitleClean';
         }
     };
 
-    // Add merchant tracking set
-    const processedMerchants = new Set();
-
     const processQueue = async () => {
         if (processing || queue.length === 0) return;
         processing = true;
@@ -257,28 +264,24 @@ const TITLE_CLEAN_KEY = 'merchantTitleClean';
             if (!deal) return;
 
             const merchantId = getMerchantId(deal);
-            if (!merchantId || processedMerchants.has(merchantId)) return;
-
-            // Add to processed set
-            processedMerchants.add(merchantId);
+            if (!merchantId) return;
 
             // Check cache first
             const cached = logoCache.get(merchantId);
-            if (cached) {
-                console.debug(`[Logo Cache] Hit for merchant ${merchantId} version ${cached.version}`);
+            if (cached?.url) {
+                console.debug(`[Logo Cache] Hit for merchant ${merchantId}`);
                 applyLogo(deal, cached.url);
                 return;
             }
 
-            // Find latest version
+            // Find latest version if not cached
             const version = await findLatestLogoVersion(merchantId);
             if (!version) return;
 
             const logoUrl = getLogoUrl(merchantId, version);
 
-            // Cache result
+            // Cache result but don't track processed merchants
             logoCache.set(merchantId, {
-                exists: true,
                 url: logoUrl,
                 version
             });
