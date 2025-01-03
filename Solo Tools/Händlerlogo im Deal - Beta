@@ -8,8 +8,168 @@
 // @grant        none
 // ==/UserScript==
 
+// Add before IIFE
+const LOGO_ENABLED_KEY = 'merchantLogoEnabled';
+const TITLE_CLEAN_KEY = 'merchantTitleClean';
+
 (function() {
     'use strict';
+
+    // Add toggle states
+    let showLogos = localStorage.getItem(LOGO_ENABLED_KEY) !== 'false';
+    let cleanTitles = localStorage.getItem(TITLE_CLEAN_KEY) !== 'false';
+
+    // Create toggle buttons
+    const createToggleButtons = () => {
+        const buttonContainer = document.createElement('div');
+        buttonContainer.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            gap: 10px;
+        `;
+
+        const logoButton = document.createElement('button');
+        const titleButton = document.createElement('button');
+
+        const buttonStyle = `
+            padding: 8px 16px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            background: #2c7;
+            color: white;
+            font-weight: bold;
+        `;
+
+        [logoButton, titleButton].forEach(btn => {
+            btn.style.cssText = buttonStyle;
+        });
+
+        const updateButtons = () => {
+            logoButton.textContent = `Logos: ${showLogos ? 'An' : 'Aus'}`;
+            logoButton.style.background = showLogos ? '#2c7' : '#777';
+            titleButton.textContent = `Händler: ${cleanTitles ? 'Aus' : 'An'}`;
+            titleButton.style.background = cleanTitles ? '#2c7' : '#777';
+        };
+
+        logoButton.onclick = () => {
+            showLogos = !showLogos;
+            localStorage.setItem(LOGO_ENABLED_KEY, showLogos);
+            updateButtons();
+
+            // Live update logos
+            document.querySelectorAll('.merchant-logo-bg').forEach(logo => {
+                logo.style.display = showLogos ? 'block' : 'none';
+            });
+
+            // Process unprocessed deals if enabled
+            if (showLogos) {
+                processDeals();
+            }
+        };
+
+        titleButton.onclick = () => {
+            cleanTitles = !cleanTitles;
+            localStorage.setItem(TITLE_CLEAN_KEY, cleanTitles);
+            updateButtons();
+
+            document.querySelectorAll([
+                'article.thread--deal',
+                'article.thread--voucher'
+            ].join(', ')).forEach(deal => {
+                const merchantLink = deal.querySelector('a[data-t="merchantLink"]');
+                const titleLink = deal.querySelector('.thread-title .thread-link');
+
+                if (merchantLink && titleLink) {
+                    const merchantName = merchantLink.textContent.trim();
+                    console.debug('Processing:', {
+                        merchantName,
+                        currentTitle: titleLink.textContent,
+                        cleanTitles
+                    });
+
+                    // Store original title if not already stored
+                    if (!deal.hasAttribute('data-original-title')) {
+                        deal.setAttribute('data-original-title', titleLink.textContent);
+                        console.debug('Storing original:', titleLink.textContent);
+                    }
+
+                    const originalTitle = deal.getAttribute('data-original-title');
+
+                    if (originalTitle) {
+                        if (cleanTitles) {
+                            // Enhanced pattern to handle all cases
+                            const newTitle = originalTitle
+                            // Handle parentheses at end
+                            .replace(new RegExp(`\\s*\\(${merchantName}\\)\\s*$`, 'i'), '')
+                            // Handle parentheses at start
+                            .replace(new RegExp(`^\\(${merchantName}\\)\\s*`, 'i'), '')
+                            // Handle brackets
+                            .replace(new RegExp(`\\s*\\[${merchantName}\\]\\s*$`, 'i'), '')
+                            .replace(new RegExp(`^\\[${merchantName}\\]\\s*`, 'i'), '')
+                            // Handle plain text with separators
+                            .replace(new RegExp(`\\s*[-–|]?\\s*${merchantName}\\s*$`, 'i'), '')
+                            .replace(new RegExp(`^${merchantName}\\s*[-–|]?\\s*`, 'i'), '')
+                            // Clean up
+                            .replace(/^\s*[:]\s*/, '')
+                            .replace(/\s+/g, ' ')
+                            .trim();
+
+                            console.debug('Cleaned to:', newTitle);
+                            titleLink.textContent = newTitle;
+                        } else {
+                            console.debug('Restoring to:', originalTitle);
+                            titleLink.textContent = originalTitle;
+                        }
+                    }
+                }
+            });
+        };
+
+        updateButtons();
+        buttonContainer.appendChild(logoButton);
+        buttonContainer.appendChild(titleButton);
+        document.body.appendChild(buttonContainer);
+    };
+
+    // Add initialization function
+    const initializeDeals = () => {
+        document.querySelectorAll([
+            'article.thread--deal',
+            'article.thread--voucher'
+        ].join(', ')).forEach(deal => {
+            const merchantLink = deal.querySelector('a[data-t="merchantLink"]');
+            const titleLink = deal.querySelector('.thread-title .thread-link');
+
+            if (merchantLink && titleLink) {
+                const merchantName = merchantLink.textContent.trim();
+
+                // Store original title
+                if (!deal.hasAttribute('data-original-title')) {
+                    deal.setAttribute('data-original-title', titleLink.textContent);
+                }
+
+                const originalTitle = deal.getAttribute('data-original-title');
+
+                if (originalTitle && cleanTitles) {
+                    const newTitle = originalTitle
+                    .replace(new RegExp(`\\s*\\(${merchantName}\\)\\s*$`, 'i'), '')
+                    .replace(new RegExp(`^\\(${merchantName}\\)\\s*`, 'i'), '')
+                    .replace(new RegExp(`\\s*\\[${merchantName}\\]\\s*$`, 'i'), '')
+                    .replace(new RegExp(`^\\[${merchantName}\\]\\s*`, 'i'), '')
+                    .replace(new RegExp(`\\s*[-–|]?\\s*${merchantName}\\s*$`, 'i'), '')
+                    .replace(new RegExp(`^${merchantName}\\s*[-–|]?\\s*`, 'i'), '')
+                    .replace(/^\s*[:]\s*/, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                    titleLink.textContent = newTitle;
+                }
+            }
+        });
+    };
 
     // Constants
     const PROCESSED_ATTR = 'data-bg-processed';
@@ -17,11 +177,16 @@
     // Extract merchant ID from deal
     const getMerchantId = (dealElement) => {
         try {
-            // Find merchant link with either pattern
-            const merchantLink = dealElement.querySelector('a[href*="deals?merchant-id="], a[href*="gutscheine?merchant-id="]');
+            // Find merchant link with all possible patterns
+            const merchantLink = dealElement.querySelector([
+                'a[href*="deals?merchant-id="]',
+                'a[href*="gutscheine?merchant-id="]',
+                'a[href*="search/gutscheine?merchant-id="]'
+            ].join(', '));
+
             if (!merchantLink) return null;
 
-            // Extract ID from either URL pattern
+            // Extract ID from URL pattern
             const match = merchantLink.href.match(/merchant-id=(\d+)/);
             return match ? match[1] : null;
         } catch (error) {
@@ -181,8 +346,29 @@
     // Add type safety
     const processDeal = (deal) => {
         if (!deal || deal.hasAttribute(PROCESSED_ATTR)) return;
-        queue.push(deal);
-        void processQueue(); // Handle promise
+
+        if (cleanTitles) {
+            const merchantLink = deal.querySelector('a[data-t="merchantLink"]');
+            if (merchantLink) {
+                const merchantName = merchantLink.textContent.trim();
+                const titleLink = deal.querySelector('.thread-title .thread-link');
+                if (titleLink && merchantName) {
+                    const title = titleLink.textContent;
+                    const cleanTitle = title
+                    .replace(new RegExp(`\\s*[-|]?\\s*${merchantName}\\s*$`, 'i'), '')
+                    .replace(new RegExp(`^${merchantName}\\s*[-|]?\\s*`, 'i'), '')
+                    .trim();
+                    if (cleanTitle !== title) {
+                        titleLink.textContent = cleanTitle;
+                    }
+                }
+            }
+        }
+
+        if (showLogos) {
+            queue.push(deal);
+            void processQueue();
+        }
     };
 
     // Debounce observer callback
@@ -196,7 +382,10 @@
 
     // Create debounced processDeals
     const debouncedProcessDeals = debounce(() => {
-        document.querySelectorAll('article.thread--deal:not([data-bg-processed])')
+        document.querySelectorAll([
+            'article.thread--deal:not([data-bg-processed])',
+            'article.thread--voucher:not([data-bg-processed])'
+        ].join(', '))
             .forEach(element => {
             if (element instanceof HTMLElement && !element.querySelector('.merchant-logo-bg')) {
                 processDeal(element);
@@ -210,7 +399,10 @@
     // Add error handling
     const processDeals = () => {
         try {
-            document.querySelectorAll('article.thread--deal:not([data-bg-processed])')
+            document.querySelectorAll([
+                'article.thread--deal:not([data-bg-processed])',
+                'article.thread--voucher:not([data-bg-processed])'
+            ].join(', '))
                 .forEach((element) => {
                 if (element instanceof HTMLElement) {
                     processDeal(element);
@@ -224,6 +416,8 @@
     // Add cleanup
     // Start observing with disconnect handling
     try {
+        createToggleButtons();
+        initializeDeals();
         observer.observe(document.body, {
             childList: true,
             subtree: true
