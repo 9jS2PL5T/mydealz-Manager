@@ -102,21 +102,7 @@ const TITLE_CLEAN_KEY = 'merchantTitleClean';
                     if (originalTitle) {
                         if (cleanTitles) {
                             // Enhanced pattern to handle all cases
-                            const newTitle = originalTitle
-                            // Handle parentheses at end
-                            .replace(new RegExp(`\\s*\\(${merchantName}\\)\\s*$`, 'i'), '')
-                            // Handle parentheses at start
-                            .replace(new RegExp(`^\\(${merchantName}\\)\\s*`, 'i'), '')
-                            // Handle brackets
-                            .replace(new RegExp(`\\s*\\[${merchantName}\\]\\s*$`, 'i'), '')
-                            .replace(new RegExp(`^\\[${merchantName}\\]\\s*`, 'i'), '')
-                            // Handle plain text with separators
-                            .replace(new RegExp(`\\s*[-–|]?\\s*${merchantName}\\s*$`, 'i'), '')
-                            .replace(new RegExp(`^${merchantName}\\s*[-–|]?\\s*`, 'i'), '')
-                            // Clean up
-                            .replace(/^\s*[:]\s*/, '')
-                            .replace(/\s+/g, ' ')
-                            .trim();
+                            const newTitle = cleanMerchantFromTitle(originalTitle, merchantName);
 
                             console.debug('Cleaned to:', newTitle);
                             titleLink.textContent = newTitle;
@@ -147,7 +133,7 @@ const TITLE_CLEAN_KEY = 'merchantTitleClean';
             if (merchantLink && titleLink) {
                 const merchantName = merchantLink.textContent.trim();
 
-                // Store original title
+                // Store original title if not already stored
                 if (!deal.hasAttribute('data-original-title')) {
                     deal.setAttribute('data-original-title', titleLink.textContent);
                 }
@@ -155,16 +141,9 @@ const TITLE_CLEAN_KEY = 'merchantTitleClean';
                 const originalTitle = deal.getAttribute('data-original-title');
 
                 if (originalTitle && cleanTitles) {
-                    const newTitle = originalTitle
-                    .replace(new RegExp(`\\s*\\(${merchantName}\\)\\s*$`, 'i'), '')
-                    .replace(new RegExp(`^\\(${merchantName}\\)\\s*`, 'i'), '')
-                    .replace(new RegExp(`\\s*\\[${merchantName}\\]\\s*$`, 'i'), '')
-                    .replace(new RegExp(`^\\[${merchantName}\\]\\s*`, 'i'), '')
-                    .replace(new RegExp(`\\s*[-–|]?\\s*${merchantName}\\s*$`, 'i'), '')
-                    .replace(new RegExp(`^${merchantName}\\s*[-–|]?\\s*`, 'i'), '')
-                    .replace(/^\s*[:]\s*/, '')
-                    .replace(/\s+/g, ' ')
-                    .trim();
+                    // Enhanced pattern to handle all cases
+                    const newTitle = cleanMerchantFromTitle(originalTitle, merchantName);
+
                     titleLink.textContent = newTitle;
                 }
             }
@@ -266,6 +245,9 @@ const TITLE_CLEAN_KEY = 'merchantTitleClean';
         }
     };
 
+    // Add merchant tracking set
+    const processedMerchants = new Set();
+
     const processQueue = async () => {
         if (processing || queue.length === 0) return;
         processing = true;
@@ -275,7 +257,10 @@ const TITLE_CLEAN_KEY = 'merchantTitleClean';
             if (!deal) return;
 
             const merchantId = getMerchantId(deal);
-            if (!merchantId) return;
+            if (!merchantId || processedMerchants.has(merchantId)) return;
+
+            // Add to processed set
+            processedMerchants.add(merchantId);
 
             // Check cache first
             const cached = logoCache.get(merchantId);
@@ -344,23 +329,81 @@ const TITLE_CLEAN_KEY = 'merchantTitleClean';
     };
 
     // Add type safety
+    const shouldCleanTitle = (title, merchantName) => {
+        // Include partial matches within brackets/parentheses
+        const patterns = [
+            // Full merchant name
+            new RegExp(`\\s*\\(${merchantName}\\)\\s*$`, 'i'),
+            new RegExp(`^\\(${merchantName}\\)\\s*`, 'i'),
+            new RegExp(`\\s*\\[${merchantName}\\]\\s*$`, 'i'),
+            new RegExp(`^\\[${merchantName}\\]\\s*`, 'i'),
+            // Merchant name with additional content in brackets
+            new RegExp(`\\[(.*\\s)?${merchantName}(\\s.*)?\\]`, 'i'),
+            new RegExp(`\\((.*\\s)?${merchantName}(\\s.*)?\\)`, 'i'),
+            // Plain merchant name
+            new RegExp(`\\s*[-–|]?\\s*${merchantName}\\s*$`, 'i'),
+            new RegExp(`^${merchantName}\\s*[-–|]?\\s*`, 'i')
+        ];
+        return patterns.some(pattern => pattern.test(title));
+    };
+
+    const cleanMerchantFromTitle = (title, merchantName) => {
+        let cleanTitle = title;
+
+        // Check for merchant name alone in brackets/parentheses
+        const soloPatterns = [
+            new RegExp(`^\\[${merchantName}\\]\\s*`, 'i'),
+            new RegExp(`^\\(${merchantName}\\)\\s*`, 'i')
+        ];
+
+        // If merchant name is alone in brackets, remove entire bracket section
+        if (soloPatterns.some(pattern => pattern.test(title))) {
+            cleanTitle = cleanTitle
+                .replace(new RegExp(`^\\[${merchantName}\\]\\s*`, 'i'), '')
+                .replace(new RegExp(`^\\(${merchantName}\\)\\s*`, 'i'), '');
+        } else {
+            // Otherwise handle mixed content in brackets
+            cleanTitle = cleanTitle
+            // Handle merchant name within brackets
+                .replace(new RegExp(`\\[(.*\\s)?${merchantName}(\\s+)(.+?)\\]`, 'i'), '[$3]')
+                .replace(new RegExp(`\\[${merchantName}(\\s+)(.+?)\\]`, 'i'), '[$2]')
+                .replace(new RegExp(`\\[(.+?)(\\s+)${merchantName}\\]`, 'i'), '[$1]')
+            // Handle merchant name within parentheses
+                .replace(new RegExp(`\\((.*\\s)?${merchantName}(\\s+)(.+?)\\)`, 'i'), '($3)')
+                .replace(new RegExp(`\\(${merchantName}(\\s+)(.+?)\\)`, 'i'), '($2)')
+                .replace(new RegExp(`\\((.+?)(\\s+)${merchantName}\\)`, 'i'), '($1)')
+            // Handle standalone merchant name
+                .replace(new RegExp(`\\s*[-–|]?\\s*${merchantName}\\s*$`, 'i'), '')
+                .replace(new RegExp(`^${merchantName}\\s*[-–|]?\\s*`, 'i'), '');
+        }
+
+        return cleanTitle
+            .replace(/^\s*[:]\s*/, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    };
+
     const processDeal = (deal) => {
         if (!deal || deal.hasAttribute(PROCESSED_ATTR)) return;
 
         if (cleanTitles) {
             const merchantLink = deal.querySelector('a[data-t="merchantLink"]');
-            if (merchantLink) {
+            const titleLink = deal.querySelector('.thread-title .thread-link');
+
+            if (merchantLink && titleLink) {
                 const merchantName = merchantLink.textContent.trim();
-                const titleLink = deal.querySelector('.thread-title .thread-link');
-                if (titleLink && merchantName) {
-                    const title = titleLink.textContent;
-                    const cleanTitle = title
-                    .replace(new RegExp(`\\s*[-|]?\\s*${merchantName}\\s*$`, 'i'), '')
-                    .replace(new RegExp(`^${merchantName}\\s*[-|]?\\s*`, 'i'), '')
-                    .trim();
-                    if (cleanTitle !== title) {
-                        titleLink.textContent = cleanTitle;
-                    }
+                const title = titleLink.textContent;
+
+                // Only store if title contains merchant name
+                if (shouldCleanTitle(title, merchantName) && !deal.hasAttribute('data-original-title')) {
+                    deal.setAttribute('data-original-title', title);
+                    console.debug('Storing original:', title);
+                }
+
+                if (deal.hasAttribute('data-original-title')) {
+                    const cleanTitle = cleanMerchantFromTitle(title, merchantName);
+
+                    titleLink.textContent = cleanTitle;
                 }
             }
         }
