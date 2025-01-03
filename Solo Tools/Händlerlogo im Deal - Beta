@@ -2,9 +2,11 @@
 // @name         Händlerlogo im Deal
 // @namespace    http://tampermonkey.net/
 // @version      1.0
-// @description  Fügt das Logo des Händlers als Hintergrund in den Deal
+// @description  Fügt das Logo des Händlers als Hintergrund in jeden passenden Deal. Entfernt den Namen des Händlers aus dem Titel.
 // @author       Flo (https://github.com/9jS2PL5T) (https://www.mydealz.de/profile/Basics0119)
+// @license      MIT
 // @match        https://www.mydealz.de/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=mydealz.de
 // @grant        none
 // ==/UserScript==
 
