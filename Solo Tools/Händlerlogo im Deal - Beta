@@ -31,7 +31,7 @@
     };
 
     // Build logo URL for merchant
-    const getLogoUrl = (merchantId, version) => {
+    const getLogoUrl = (merchantId, version = 1) => {
         return `https://static.mydealz.de/merchants/raw/avatar/${merchantId}_${version}/re/140x140/qt/70/${merchantId}_${version}.jpg`;
     };
 
@@ -60,7 +60,7 @@
             }
         },
 
-        get: (merchantId) => {
+        get: function(merchantId) { // Changed to standard JavaScript function syntax
             try {
                 const data = localStorage.getItem(`logo_${merchantId}`);
                 if (!data) return null;
@@ -73,77 +73,90 @@
                 }
                 return parsed.status;
             } catch (e) {
+                console.error(`Error getting logo cache for merchant ${merchantId}:`, e);
                 return null;
             }
         }
     };
 
     // Throttle requests
-    const queue = [];
+    const queue = []; // Removed TypeScript type
     let processing = false;
 
-    const findLatestLogoVersion = async (merchantId) => {
-        let latestVersion = 1;
-        for (let version = 1; version <= 3; version++) {
-            const url = getLogoUrl(merchantId, version);
-            if (await checkLogoExists(url)) {
-                latestVersion = version;
+    const findLatestLogoVersion = async function(merchantId) { // Removed TypeScript types
+        try {
+            let highestVersion = null;
+            // Try versions 1-3
+            for (let version = 1; version <= 3; version++) {
+                const url = getLogoUrl(merchantId, version);
+                const exists = await checkLogoExists(url);
+                if (exists) {
+                    highestVersion = version;
+                }
             }
+            return highestVersion;
+        } catch (error) {
+            console.error(`Error checking logo versions for merchant ${merchantId}:`, error);
+            return null;
         }
-        return latestVersion;
     };
 
     const processQueue = async () => {
         if (processing || queue.length === 0) return;
         processing = true;
 
-        const deal = queue.shift();
         try {
+            const deal = queue.shift();
+            if (!deal) return;
+
             const merchantId = getMerchantId(deal);
             if (!merchantId) return;
 
             // Check cache first
             const cached = logoCache.get(merchantId);
             if (cached) {
-                if (cached.exists) {
-                    applyLogo(deal, cached.url);
-                }
+                console.debug(`[Logo Cache] Hit for merchant ${merchantId} version ${cached.version}`);
+                applyLogo(deal, cached.url);
                 return;
             }
 
-            // Find latest logo version
+            // Find latest version
             const version = await findLatestLogoVersion(merchantId);
+            if (!version) return;
+
             const logoUrl = getLogoUrl(merchantId, version);
 
+            // Cache result
             logoCache.set(merchantId, {
                 exists: true,
                 url: logoUrl,
-                version: version
+                version
             });
 
+            // Apply logo
+            console.debug(`[Logo] Found for merchant ${merchantId} at version ${version}`);
             applyLogo(deal, logoUrl);
 
+        } catch (error) {
+            console.error('Error processing queue:', error);
         } finally {
             processing = false;
-            setTimeout(processQueue, 100); // Throttle requests
+            if (queue.length > 0) {
+                void processQueue();
+            }
         }
     };
 
     const applyLogo = (deal, logoUrl) => {
-        if (!logoUrl) return;
+        if (!logoUrl || !deal || deal.querySelector('.merchant-logo-bg')) return;
 
         // Set deal content styles
         deal.style.position = 'relative';
         deal.style.overflow = 'hidden';
 
-        // Ensure content stays above logo
-        Array.from(deal.children).forEach(child => {
-            child.style.position = 'relative';
-            child.style.zIndex = '1';
-        });
-
         // Create and style logo container
         const container = document.createElement('div');
+        container.classList.add('merchant-logo-bg'); // Add class for tracking
         container.style.cssText = `
             position: absolute;
             top: 50%;
@@ -151,7 +164,7 @@
             transform: translate(-50%, -50%);
             width: 200px;
             height: 200px;
-            background-image: url(${logoUrl});
+            background-image: url("${logoUrl}");
             background-size: contain;
             background-position: center;
             background-repeat: no-repeat;
@@ -165,30 +178,61 @@
         deal.setAttribute(PROCESSED_ATTR, 'true');
     };
 
-    // Queue new deals for processing
+    // Add type safety
     const processDeal = (deal) => {
-        if (deal.hasAttribute(PROCESSED_ATTR)) return;
+        if (!deal || deal.hasAttribute(PROCESSED_ATTR)) return;
         queue.push(deal);
-        processQueue();
+        void processQueue(); // Handle promise
     };
 
-    // Process all deals
-    const processDeals = () => {
+    // Debounce observer callback
+    const debounce = (fn, delay) => {
+        let timeoutId;
+        return (...args) => {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => fn(...args), delay);
+        };
+    };
+
+    // Create debounced processDeals
+    const debouncedProcessDeals = debounce(() => {
         document.querySelectorAll('article.thread--deal:not([data-bg-processed])')
-            .forEach(processDeal);
+            .forEach(element => {
+            if (element instanceof HTMLElement && !element.querySelector('.merchant-logo-bg')) {
+                processDeal(element);
+            }
+        });
+    }, 250);
+
+    // Update observer
+    const observer = new MutationObserver(debouncedProcessDeals);
+
+    // Add error handling
+    const processDeals = () => {
+        try {
+            document.querySelectorAll('article.thread--deal:not([data-bg-processed])')
+                .forEach((element) => {
+                if (element instanceof HTMLElement) {
+                    processDeal(element);
+                }
+            });
+        } catch (error) {
+            console.error('Error processing deals:', error);
+        }
     };
 
-    // Observer for new deals
-    const observer = new MutationObserver(() => {
+    // Add cleanup
+    // Start observing with disconnect handling
+    try {
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        // Initial processing
         processDeals();
-    });
-
-    // Start observing
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
-
-    // Initial processing
-    processDeals();
+    } catch (error) {
+        console.error('Error setting up observer:', error);
+        observer.disconnect();
+    }
 })();
