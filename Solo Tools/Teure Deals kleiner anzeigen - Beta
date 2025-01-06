@@ -1,0 +1,83 @@
+// ==UserScript==
+// @name         MyDealz Deal Shrinker
+// @namespace    http://tampermonkey.net/
+// @version      0.1
+// @description  Shrink expensive deals on mydealz.de
+// @author       You
+// @match        https://www.mydealz.de/*
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // Configuration
+    const PRICE_THRESHOLD = 50; // Euro
+
+    function shrinkExpensiveDeals() {
+        console.log('Starting to process deals...');
+
+        const deals = document.querySelectorAll('article.thread');
+        console.log(`Found ${deals.length} total deals`);
+
+        deals.forEach(deal => {
+            try {
+                const priceElement = deal.querySelector('.threadItemCard-price.text--b.thread-price');
+                if (!priceElement) {
+                    console.warn('No price element found:', deal);
+                    return;
+                }
+
+                const price = parseFloat(priceElement.textContent.replace('€', '').replace('.', '').replace(',', '.').trim());
+                console.log('Price:', price);
+
+                if (price > PRICE_THRESHOLD) {
+                    // Find and scale the image
+                    const imageContainer = deal.querySelector('.threadGrid-image');
+                    if (imageContainer) {
+                        console.log('Found image container, applying scaling');
+                        imageContainer.style.transform = 'scale(0.5)';
+                        imageContainer.style.transformOrigin = 'top left';
+                        // Keep original space to prevent layout shifts
+                        const img = imageContainer.querySelector('img');
+                        if (img) {
+                            const originalHeight = img.offsetHeight;
+                            imageContainer.style.height = `${originalHeight}px`;
+                        }
+                        // Debug outline
+                        imageContainer.style.border = '1px solid blue';
+                    } else {
+                        console.warn('No image container found for deal:', deal);
+                    }
+
+                    // Original container modifications
+                    const threadGrid = deal.querySelector('.threadGrid');
+                    if (threadGrid) {
+                        threadGrid.style.maxHeight = '200px';
+                        threadGrid.style.overflow = 'hidden';
+                    }
+
+                    // Hide elements
+                    const elementsToHide = ['.threadGrid-footerMeta', '.threadGrid-body'];
+                    elementsToHide.forEach(selector => {
+                        const elements = deal.querySelectorAll(selector);
+                        elements.forEach(el => {
+                            el.style.display = 'none';
+                        });
+                    });
+
+                    deal.style.border = '2px solid red';
+                }
+            } catch (error) {
+                console.error('Error processing deal:', error);
+            }
+        });
+    }
+
+    // Initial run with delay
+    setTimeout(shrinkExpensiveDeals, 1000);
+
+    // Observer for dynamic content
+    const observer = new MutationObserver(shrinkExpensiveDeals);
+    observer.observe(document.body, { childList: true, subtree: true });
+})();
