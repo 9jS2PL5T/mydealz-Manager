@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         mydealz Script 1.8.2
+// @name         mydealz Script 1.10.1
 // @namespace    http://tampermonkey.net/
-// @version      1.8.2
+// @version      1.10.1
 // @description  mydealz Deal-Management: Deals filtern und ausblenden, alle Einstellungen per UI verwalten.
-// @author       Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister), Flo (https://www.mydealz.de/profile/Basics0119)
+// @author       Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister) (https://github.com/grapefruit89) & Flo (https://www.mydealz.de/profile/Basics0119) (https://github.com/9jS2PL5T)
 // @license      MIT
 // @match        https://www.mydealz.de/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=mydealz.de
@@ -11,7 +11,9 @@
 // ==/UserScript==
 
 // Versions-Änderungen:
-//
+// Erneuter Klick auf Liste soll diese schließen
+// Settingsui schließen wenn Händler ausgeblendet wurde oder Wort hinzugefügt
+// settingsbutton rahmen angepasst
 
 // Einbinden von Font Awesome für Icons
 const fontAwesomeLink = document.createElement('link');
@@ -24,6 +26,9 @@ const IS_TOUCH_DEVICE = ('ontouchstart' in window) ||
       (navigator.maxTouchPoints > 0) ||
       (navigator.msMaxTouchPoints > 0);
 
+// Add after other constants
+const MAX_PRICE_KEY = 'maxPrice';
+
 // --- 1. Initial Setup ---
 const EXCLUDE_WORDS_KEY = 'excludeWords';
 const EXCLUDE_MERCHANTS_KEY = 'excludeMerchantIDs';
@@ -33,13 +38,15 @@ const MERCHANT_PAGE_SELECTOR = '.merchant-banner';
 
 // Load data immediately
 let excludeWords, excludeMerchantIDs, hiddenDeals;
-let dealThatOpenedSettings = null; // Add at top with other globals
+let suggestedWords = [];
+let initialSuggestionListCreated = false;
+let activeSubUI = null;
+let dealThatOpenedSettings = null;
 let settingsDiv = null;
-let isSettingsOpen = false;
 let merchantListDiv = null;
 let wordsListDiv = null;
-let uiClickOutsideHandler = null; // Add at top with other globals
-let activeSubUI = null; // Add at top with other globals
+let uiClickOutsideHandler = null;
+let isSettingsOpen = false;
 
 try {
     excludeWords = JSON.parse(localStorage.getItem(EXCLUDE_WORDS_KEY)) || [];
@@ -50,6 +57,9 @@ try {
     excludeMerchantIDs = [];
     hiddenDeals = [];
 }
+
+// Add to init section after other load statements
+let maxPrice = parseFloat(localStorage.getItem(MAX_PRICE_KEY)) || 0;
 
 // --- 1. Core Functions ---
 function processArticles() {
@@ -103,8 +113,33 @@ function shouldExcludeArticle(article) {
     const titleElement = article.querySelector('.thread-title');
     const merchantLink = article.querySelector('a[href*="merchant-id="]');
 
-    if (titleElement && excludeWords.some(word => titleElement.textContent.toLowerCase().includes(word.toLowerCase()))) {
-        return true;
+    // Add price check
+    if (maxPrice > 0) {
+        const priceElement = article.querySelector('.threadItemCard-price');
+        if (priceElement) {
+            const priceText = priceElement.textContent.trim();
+            // Remove thousand separators and replace comma with period
+            const price = parseFloat(priceText
+                                     .replace('€', '')
+                                     .replace(/\./g, '') // Remove thousand separators
+                                     .replace(',', '.')); // Convert decimal comma to period
+            if (!isNaN(price) && price > maxPrice) {
+                return true;
+            }
+        }
+    }
+
+    // Verbesserte Titelprüfung mit HTML Entity Dekodierung
+    if (titleElement) {
+        const normalizedTitle = decodeHtml(titleElement.innerHTML)
+        .replace(/&nbsp;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .toLowerCase()
+        .trim();
+
+        if (excludeWords.some(word => normalizedTitle.includes(word.toLowerCase()))) {
+            return true;
+        }
     }
 
     if (merchantLink) {
@@ -210,45 +245,28 @@ function addAutoSaveListeners() {
 
 // Remove highlighting-related event listeners
 
-// UI-Button zum Öffnen der Einstellungen wird nur einmal erstellt
-const settingsButton = document.createElement('button');
-settingsButton.innerHTML = '⚙️';
-settingsButton.style.padding = '10px';
-settingsButton.style.background = 'transparent'; // Hintergrund transparent machen
-settingsButton.style.color = 'white';
-settingsButton.style.border = 'none';
-settingsButton.style.borderRadius = '5px';
-settingsButton.style.cursor = 'pointer';
-
-// UI-Button zum Verbergen der Deals wird nur einmal erstellt
-const hideButton = document.createElement('button');
-hideButton.innerHTML = '❌';
-hideButton.style.marginLeft = '10px';
-hideButton.title = 'Deal verbergen'; // Tooltip hinzufügen
-hideButton.style.padding = '10px';
-hideButton.style.background = 'transparent'; // Hintergrund transparent machen
-hideButton.style.color = 'white';
-hideButton.style.border = 'none';
-hideButton.style.borderRadius = '5px';
-hideButton.style.cursor = 'pointer';
-
-// Funktion, um das Verbergen der Deals zu ermöglichen
-hideButton.addEventListener('click', function(event) {
-    const deal = event.target.closest('article');
-    if (deal) {
-        const dealId = deal.getAttribute('id');
-        hiddenDeals.push(dealId);
-        saveHiddenDeals();
-        hideDeal(deal);
-    }
-});
-
 // Add debug logging to settings button click handler
 function addSettingsButton() {
     const deals = document.querySelectorAll('article.thread--deal, article.thread--voucher');
 
     deals.forEach(deal => {
         if (deal.hasAttribute('data-settings-added')) return;
+
+        const settingsContainer = document.createElement('div');
+        settingsContainer.className = 'vote-box settings-container';
+        settingsContainer.style.cssText = `
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 8px;
+            margin-right: 8px;
+            height: 36px;  // Match example size
+            width: 36px;   // Match example size
+            border-radius: 50%;
+            background: #f2f2f2;
+            border: 1px solid #e4e4e4;
+            padding: 4px; // Reduced padding
+        `;
 
         const settingsBtn = document.createElement('button');
         settingsBtn.innerHTML = '⚙️';
@@ -257,15 +275,14 @@ function addSettingsButton() {
         settingsBtn.style.cssText = `
             border: none;
             cursor: pointer;
-            height: 32px;
-            width: 32px;
+            height: 100%;  // Fill container
+            width: 100%;   // Fill container
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 16px;
             padding: 0;
             background: transparent;
-            z-index: 1000;
         `;
 
         settingsBtn.onclick = (e) => {
@@ -276,28 +293,28 @@ function addSettingsButton() {
             return false;
         };
 
-        const settingsContainer = document.createElement('div');
-        settingsContainer.className = 'vote-box settings-container';
-        settingsContainer.style.cssText = `
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-left: 8px;
-            height: 32px;
-            width: 32px;
-            border-radius: 50%;
-            background: #f2f2f2;
-            border: 1px solid #e4e4e4;
-            padding: 4px;
-            z-index: 1000;
-        `;
-
         settingsContainer.appendChild(settingsBtn);
 
         const voteBox = deal.querySelector('.vote-box');
         if (voteBox && voteBox.parentNode) {
             voteBox.parentNode.insertBefore(settingsContainer, voteBox.nextSibling);
             deal.setAttribute('data-settings-added', 'true');
+
+            // Show button only when deal is visible
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting &&
+                        !deal.closest('.overlay, .popover')) { // Check for overlay parents
+                        settingsContainer.style.display = 'flex';
+                    } else {
+                        settingsContainer.style.display = 'none';
+                    }
+                });
+            }, {
+                threshold: 0.1 // Show when at least 10% of deal is visible
+            });
+
+            observer.observe(deal);
         }
     });
 }
@@ -374,6 +391,18 @@ function addHideButtons() {
         if (IS_TOUCH_DEVICE) {
             let buttonVisible = false;
 
+            // Add scroll handler to hide button
+            const scrollHandler = () => {
+                if (buttonVisible) {
+                    buttonVisible = false;
+                    hideButtonContainer.style.display = 'none';
+                }
+            };
+
+            // Add scroll listener
+            window.addEventListener('scroll', scrollHandler, { passive: true });
+
+
             targetElement.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -386,8 +415,22 @@ function addHideButtons() {
                     hiddenDeals.push(dealId);
                     saveHiddenDeals();
                     hideDeal(deal);
+                    // Remove scroll listener after hiding deal
+                    window.removeEventListener('scroll', scrollHandler);
                 }
             }, true);
+
+            // Clean up scroll listener when deal is removed
+            const dealObserver = new MutationObserver((mutations) => {
+                mutations.forEach(mutation => {
+                    if (mutation.type === 'childList' && mutation.removedNodes.length) {
+                        window.removeEventListener('scroll', scrollHandler);
+                        dealObserver.disconnect();
+                    }
+                });
+            });
+
+            dealObserver.observe(deal.parentNode, { childList: true });
 
             targetElement.addEventListener('touchend', () => {
                 if (!buttonVisible) {
@@ -420,7 +463,7 @@ function addHideButtons() {
     });
 }
 
-// HTML Decoder Funktion hinzufügen
+// Verbesserte HTML Decoder Funktion
 function decodeHtml(html) {
     const txt = document.createElement('textarea');
     txt.innerHTML = html;
@@ -719,13 +762,44 @@ function getWordsFromTitle(dealElement) {
     const titleElement = dealElement.querySelector('.thread-title');
     if (!titleElement) return [];
 
-    const titleText = titleElement.textContent.trim();
+    // Extrahiere nur den sichtbaren Text aus dem Title
+    const visibleTitle = titleElement.textContent;
 
-    // Verbesserte Wortextraktion
-    return titleText.split(/[\s,.-]+/)
-        .map(word => word.trim().replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, ''))
-        .filter(word => word.length > 2)
-        .filter((word, index, self) => self.indexOf(word) === index); // Duplikate entfernen
+    // Decode HTML entities and normalize spaces
+    const titleText = decodeHtml(visibleTitle)
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+    // Verbesserte Wortextraktion mit Beibehaltung der Bindestriche zwischen Wörtern
+    const words = titleText
+    // Teile nur an Leerzeichen und Kommas, behalte Bindestriche
+    .split(/[\s,]+/)
+    .map(word => word.trim())
+    // Mindestens 2 alphanumerische Zeichen und keine HTML/URL-Fragmente
+    .filter(word =>
+            word.match(/[a-zA-Z0-9äöüÄÖÜß]{2,}/) &&
+            !word.includes('/') &&
+            !word.includes('=') &&
+            !word.startsWith('class') &&
+            !word.startsWith('title')
+           )
+    // Nur führende/endende Sonderzeichen entfernen, Bindestriche behalten
+    .map(word => word.replace(/^[^a-zA-Z0-9äöüÄÖÜß-]+|[^a-zA-Z0-9äöüÄÖÜß-]+$/g, ''));
+
+    // Duplikate case-insensitive entfernen, Original-Schreibweise beibehalten
+    const uniqueWords = [];
+    const seenWords = new Set();
+
+    for (const word of words) {
+        const lowerWord = word.toLowerCase();
+        if (!seenWords.has(lowerWord)) {
+            seenWords.add(lowerWord);
+            uniqueWords.push(word);
+        }
+    }
+
+    return uniqueWords;
 }
 
 // Add debug logging to settings UI creation
@@ -744,8 +818,9 @@ function createSettingsUI() {
         border: 1px solid #ccc;
         border-radius: 5px;
         z-index: 1000;
-        max-width: 300px;
-        overflow: auto;
+        width: 300px;
+        max-height: 90vh;
+        overflow: visible;
     `;
 
     // Get merchant info from current deal
@@ -775,33 +850,20 @@ function createSettingsUI() {
         </button>
     ` : '';
 
-    // Datalist mit korrekten Attributen erstellen
+    // Datalist Element entfernen, wird nicht benötigt
     const wordInputSection = `
     <div style="margin-bottom: 20px;">
         <div style="display: flex; align-items: center; gap: 5px;">
-            <input list="wordSuggestions"
-                id="newWordInput"
+            <input id="newWordInput"
                 autocomplete="off"
                 placeholder="Neues Wort..."
                 title="Deals mit hier eingetragenen Wörtern im Titel werden ausgeblendet."
                 style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 3px;">
-            <datalist id="wordSuggestions">
-                ${dealWords.map(word => `<option value="${word}">${word}</option>`).join('\n')}
-            </datalist>
             <button id="addWordButton"
                 style="padding: 8px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">
                 <i class="fas fa-plus"></i>
             </button>
         </div>
-        ${IS_TOUCH_DEVICE ? `
-        <div id="touchWordList" style="display: none; margin-top: 10px; max-height: 200px; overflow-y: auto; background: white; border: 1px solid #ccc; border-radius: 3px;">
-            ${dealWords.map(word => `
-                <div class="touch-word-item" style="padding: 10px; border-bottom: 1px solid #eee; cursor: pointer;">
-                    ${word}
-                </div>
-            `).join('')}
-        </div>
-        ` : ''}
     </div>`;
 
     // Update the settingsDiv HTML to include the new wordInputSection
@@ -811,6 +873,26 @@ function createSettingsUI() {
         <!-- rest of the HTML stays the same -->
         <!-- Merchant Hide Button -->
         ${merchantButtonHtml}
+
+        <!-- Price Filter Section -->
+        <div style="margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 3px;">
+            <div style="margin-bottom: 8px; font-size: 0.9em; color: #333;">
+                Maximalpreis. Deals über diesem Wert, werden ausgeblendet.
+            </div>
+            <div style="display: flex; align-items: center;">
+                <input type="number"
+                    id="maxPriceInput"
+                    value="${maxPrice}"
+                    min="0"
+                    step="0.01"
+                    placeholder="Max. Preis"
+                    style="width: 100px; padding: 8px; border: 1px solid #ccc; border-radius: 3px;">
+                <span style="margin-left: 8px;">€ max.</span>
+            </div>
+            <div style="font-size: 0.8em; color: #666; margin-top: 5px;">
+                0 = keine Preisfilterung
+            </div>
+        </div>
 
         <!-- List Management Section -->
         <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
@@ -843,16 +925,27 @@ function createSettingsUI() {
     setupClickOutsideHandler();
 
     // Add word input handler
-    document.getElementById('addWordButton').addEventListener('click', () => {
-        const newWord = document.getElementById('newWordInput').value.trim();
-        if (newWord && !excludeWords.includes(newWord)) {
-            // Add new word at start of array
-            excludeWords.unshift(newWord);
-            saveExcludeWords(excludeWords);
-            document.getElementById('newWordInput').value = '';
-            processArticles();
-        }
-    });
+    const addWordButton = document.getElementById('addWordButton');
+    if (addWordButton) {
+        addWordButton.addEventListener('click', () => {
+            const newWordInput = document.getElementById('newWordInput');
+            const newWord = newWordInput.value.trim();
+            if (newWord && !excludeWords.includes(newWord)) {
+                excludeWords.unshift(newWord);
+                saveExcludeWords(excludeWords);
+                newWordInput.value = '';
+                processArticles();
+                //updateActiveLists(); // Liste aktualisieren
+                cleanup(); // Close settings UI
+
+                suggestedWords = [];
+                const suggestionList = document.getElementById('wordSuggestionList');
+                if (suggestionList) {
+                    suggestionList.remove();
+                }
+            }
+        });
+    }
 
     // Add enter key handler for input
     document.getElementById('newWordInput').addEventListener('keypress', (e) => {
@@ -876,36 +969,60 @@ function createSettingsUI() {
             const merchantID = merchantIDMatch[1];
             const merchantName = dealThatOpenedSettings.querySelector('a[data-t="merchantLink"]').textContent.trim();
 
-            // Load current data
             const merchantsData = loadExcludeMerchants();
-
-            // Check if ID already exists
             if (!merchantsData.some(m => m.id === merchantID)) {
-                // Add new merchant at start of array
                 merchantsData.unshift({ id: merchantID, name: merchantName });
                 saveExcludeMerchants(merchantsData);
                 processArticles();
+                cleanup(); // Close settings UI
+
+                // Aktualisiere Listen wenn UI offen
+                if (activeSubUI === 'merchant') {
+                    updateActiveLists();
+                }
             }
         });
     }
 
     // Add merchant list button listener
     document.getElementById('showMerchantListButton').addEventListener('click', () => {
+        if (activeSubUI === 'merchant') {
+            // Close if already open
+            closeActiveSubUI();
+            return;
+        }
         closeActiveSubUI();
         createMerchantListUI();
         activeSubUI = 'merchant';
+        // Update button appearance
+        document.getElementById('showMerchantListButton').innerHTML =
+            '<i class="fas fa-times"></i> Händlerfilter ausblenden';
     });
 
     // Add words list button listener
     document.getElementById('showWordsListButton').addEventListener('click', () => {
+        if (activeSubUI === 'words') {
+            // Close if already open
+            closeActiveSubUI();
+            return;
+        }
         closeActiveSubUI();
         createExcludeWordsUI();
         activeSubUI = 'words';
+        // Update button appearance
+        document.getElementById('showWordsListButton').innerHTML =
+            '<i class="fas fa-times"></i> Wortfilter ausblenden';
     });
 
     // Always ensure close button works
     document.getElementById('closeSettingsButton').addEventListener('click', (e) => {
         e.stopPropagation(); // Prevent event bubbling
+        cleanup();
+    });
+
+    // Update cleanup function
+    function cleanup() {
+        // Remove settings UI
         if (settingsDiv?.parentNode) {
             settingsDiv.remove();
             isSettingsOpen = false;
@@ -918,7 +1035,14 @@ function createSettingsUI() {
         if (wordsListDiv && wordsListDiv.parentNode) {
             wordsListDiv.remove();
         }
-    });
+        // Remove word suggestions list
+        const suggestionList = document.getElementById('wordSuggestionList');
+        if (suggestionList) {
+            suggestionList.remove();
+        }
+        // Remove event listeners
+        document.removeEventListener('click', suggestionClickHandler);
+    }
 
     // Backup/Restore Event Listeners
     document.getElementById('createBackupButton').addEventListener('click', backupData);
@@ -929,32 +1053,133 @@ function createSettingsUI() {
 
     document.getElementById('restoreFileInput').addEventListener('change', restoreData);
 
-    if (IS_TOUCH_DEVICE) {
-        const newWordInput = document.getElementById('newWordInput');
-        const touchWordList = document.getElementById('touchWordList');
+    // Einheitliche Event Handler für Input und Liste
+    const newWordInput = document.getElementById('newWordInput');
+    let suggestedWords = []; // Initial leer
 
-        // Show word list when tapping the input
-        newWordInput.addEventListener('focus', () => {
-            touchWordList.style.display = 'block';
+    // Input Focus Handler anpassen
+    newWordInput.addEventListener('focus', () => {
+        // Nur bei erstem Fokus Wörter laden
+        if (suggestedWords.length === 0) {
+            suggestedWords = dealThatOpenedSettings ? getWordsFromTitle(dealThatOpenedSettings) : [];
+        }
+
+        // Nur Liste anzeigen wenn Vorschläge vorhanden
+        if (suggestedWords.length > 0) {
+            updateSuggestionList();
+        }
+    });
+
+    function updateSuggestionList() {
+        // Filter words that are already in excludeWords
+        suggestedWords = suggestedWords.filter(word => !excludeWords.includes(word));
+
+        // Remove old list if exists
+        const oldList = document.getElementById('wordSuggestionList');
+        if (oldList) oldList.remove();
+
+        if (!suggestedWords.length) return;
+
+        // Position des Input-Felds ermitteln
+        const inputField = document.getElementById('newWordInput');
+        const inputRect = inputField.getBoundingClientRect();
+
+        // Einheitliches Styling für die Liste
+        const wordSuggestionList = document.createElement('div');
+        wordSuggestionList.id = 'wordSuggestionList';
+        wordSuggestionList.style.cssText = `
+            position: absolute;
+            top: ${inputRect.bottom + window.scrollY}px;
+            left: ${inputRect.left + window.scrollX}px;
+            width: ${inputRect.width}px;
+            max-height: 200px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            z-index: 1002;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: block;
+        `;
+
+        // Vorschlagsliste befüllen
+        wordSuggestionList.innerHTML = suggestedWords
+            .map(word => `
+                <div class="word-suggestion-item" style="padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; transition: background-color 0.2s;">
+                    ${word}
+                </div>
+            `).join('');
+
+        document.body.appendChild(wordSuggestionList);
+
+        // Event Listener für Items
+        wordSuggestionList.querySelectorAll('.word-suggestion-item').forEach(item => {
+            item.addEventListener('mouseenter', () => {
+                item.style.backgroundColor = '#f0f0f0';
+            });
+            item.addEventListener('mouseleave', () => {
+                item.style.backgroundColor = 'white';
+            });
+            item.addEventListener('click', handleWordSelection);
         });
 
-        // Hide word list when tapping outside
-        document.addEventListener('click', (e) => {
-            if (!touchWordList.contains(e.target) && e.target !== newWordInput) {
-                touchWordList.style.display = 'none';
+        // Input event listener
+        newWordInput.addEventListener('focus', () => {
+            // Nur Liste anzeigen wenn noch Vorschläge vorhanden
+            if (suggestedWords.length > 0) {
+                const list = document.getElementById('wordSuggestionList');
+                if (list) {
+                    list.style.display = 'block';
+                } else {
+                    updateSuggestionList();
+                }
             }
         });
-
-        // Wörter mit Leerzeichen anfügen und Liste offen lassen
-        document.querySelectorAll('.touch-word-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const word = item.textContent.trim();
-                const currentValue = newWordInput.value.trim();
-                newWordInput.value = currentValue ? `${currentValue} ${word}` : word;
-                // touchWordList.style.display = 'none'; // Remove this line to keep list open
-            });
-        });
     }
+
+    function handleWordSelection(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const word = e.target.textContent.trim();
+        const newWordInput = document.getElementById('newWordInput');
+        const currentValue = newWordInput.value.trim();
+
+        newWordInput.value = currentValue ? `${currentValue} ${word}` : word;
+        suggestedWords = suggestedWords.filter(w => w !== word);
+
+        updateSuggestionList();
+        newWordInput.focus();
+    }
+
+    // Click Outside Handler anpassen
+    const suggestionClickHandler = (e) => {
+        const list = document.getElementById('wordSuggestionList');
+        const input = document.getElementById('newWordInput');
+
+        if (!list?.contains(e.target) && !input?.contains(e.target)) {
+            list?.remove();
+        }
+    };
+
+    document.addEventListener('click', suggestionClickHandler);
+
+    // Cleanup bei UI-Schließung
+    document.getElementById('closeSettingsButton').addEventListener('click', () => {
+        document.removeEventListener('click', suggestionClickHandler);
+    });
+
+    // Add cleanup to window unload
+    window.addEventListener('unload', cleanup);
+
+    // Add to createSettingsUI after other event listeners
+    document.getElementById('maxPriceInput').addEventListener('change', (e) => {
+        const price = parseFloat(e.target.value);
+        if (!isNaN(price) && price >= 0) {
+            saveMaxPrice(price);
+            processArticles();
+        }
+    });
 }
 
 function initObserver() {
@@ -1043,10 +1268,16 @@ function setupClickOutsideHandler() {
 
 // Add helper function to close sub-UIs
 function closeActiveSubUI() {
-    if (activeSubUI === 'merchant' && merchantListDiv?.parentNode) {
-        merchantListDiv.remove();
-    } else if (activeSubUI === 'words' && wordsListDiv?.parentNode) {
-        wordsListDiv.remove();
+    if (activeSubUI === 'merchant') {
+        merchantListDiv?.remove();
+        // Reset button text
+        const btn = document.getElementById('showMerchantListButton');
+        if (btn) btn.innerHTML = '<i class="fas fa-store"></i> Händlerfilter verwalten';
+    } else if (activeSubUI === 'words') {
+        wordsListDiv?.remove();
+        // Reset button text
+        const btn = document.getElementById('showWordsListButton');
+        if (btn) btn.innerHTML = '<i class="fas fa-list"></i> Wortfilter verwalten';
     }
     activeSubUI = null;
 }
@@ -1108,3 +1339,84 @@ function addMerchantPageHideButton() {
 document.addEventListener('DOMContentLoaded', () => {
     addMerchantPageHideButton();
 });
+
+// Funktion zum Aktualisieren der aktiven Listen
+function updateActiveLists() {
+    if (activeSubUI === 'merchant' && merchantListDiv) {
+        const merchantList = document.getElementById('merchantList');
+        if (merchantList) {
+            const currentMerchants = loadExcludeMerchants();
+            merchantList.innerHTML = currentMerchants.map(merchant => `
+                <div class="merchant-item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 5px; background: #f0f0f0; border-radius: 3px;">
+                    <div style="display: flex; flex-direction: column;">
+                        <span style="font-weight: bold;">${merchant.name}</span>
+                        <span style="color: #666; font-size: 0.8em;">ID: ${merchant.id}</span>
+                    </div>
+                    <button class="delete-merchant" data-id="${merchant.id}" style="background: none; border: none; cursor: pointer; color: #666;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `).join('');
+
+            // Event Listener neu hinzufügen
+            document.querySelectorAll('.delete-merchant').forEach(button => {
+                button.addEventListener('click', handleMerchantDelete);
+            });
+        }
+    } else if (activeSubUI === 'words' && wordsListDiv) {
+        const wordsList = document.getElementById('wordsList');
+        if (wordsList) {
+            const currentWords = loadExcludeWords();
+            wordsList.innerHTML = currentWords.map(word => `
+                <div class="word-item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 5px; background: #f0f0f0; border-radius: 3px;">
+                    <span style="word-break: break-word;">${word}</span>
+                    <button class="delete-word" data-word="${word}" style="background: none; border: none; cursor: pointer; color: #666;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `).join('');
+
+            // Event Listener neu hinzufügen
+            document.querySelectorAll('.delete-word').forEach(button => {
+                button.addEventListener('click', handleWordDelete);
+            });
+        }
+    }
+}
+
+// Handler Funktionen definieren
+function handleMerchantDelete(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const deleteButton = e.target.closest('.delete-merchant');
+    if (!deleteButton) return;
+
+    const idToDelete = deleteButton.dataset.id;
+    const merchantsData = loadExcludeMerchants();
+    const updatedMerchants = merchantsData.filter(m => m.id !== idToDelete);
+
+    saveExcludeMerchants(updatedMerchants);
+    deleteButton.closest('.merchant-item').remove();
+    processArticles();
+}
+
+function handleWordDelete(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const deleteButton = e.target.closest('.delete-word');
+    if (!deleteButton) return;
+
+    const wordToDelete = deleteButton.dataset.word;
+    excludeWords = excludeWords.filter(word => word !== wordToDelete);
+    saveExcludeWords(excludeWords);
+    deleteButton.closest('.word-item').remove();
+    processArticles();
+}
+
+// Add new save function
+function saveMaxPrice(price) {
+    localStorage.setItem(MAX_PRICE_KEY, price.toString());
+    maxPrice = price;
+}
