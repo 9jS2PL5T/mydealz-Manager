@@ -275,7 +275,7 @@ function addSettingsButton() {
             width: 36px;
             border-radius: 50%;
             border: 1px solid #e4e4e4;
-            background: transparent;
+            background-color: #ffffff; // Added solid background
             padding: 4px;
         `;
 
@@ -293,15 +293,17 @@ function addSettingsButton() {
             justify-content: center;
             font-size: 16px;
             padding: 0;
-            background: transparent;
+            background-color: #ffffff; // Added solid background
         `;
 
         settingsBtn.addEventListener('mouseenter', () => {
             settingsContainer.style.backgroundColor = '#f2f2f2';
+            settingsBtn.style.backgroundColor = '#f2f2f2';
         });
 
         settingsBtn.addEventListener('mouseleave', () => {
-            settingsContainer.style.backgroundColor = 'transparent';
+            settingsContainer.style.backgroundColor = '#ffffff';
+            settingsBtn.style.backgroundColor = '#ffffff';
         });
 
         settingsBtn.onclick = (e) => {
