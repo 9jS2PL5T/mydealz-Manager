@@ -2,9 +2,9 @@ Installation: https://greasyfork.org/de/scripts/522038-mydealz-script
 
 Funktionen
 - Einzelnen Deal mittels X Button ausblenden. Der Button erscheint am Desktop PC, wenn man mit der Maus über der Temperatur schwebt. Auf Touchscreen Geräten muss man 1x auf die Temperatur tippen, damit der Button zum Ausblenden angezeigt wird
-- Deals nach Wörtern gefiltert ausblenden
-- Alle Deals eines Händlers ausblenden
-- Backup Speichern/Wiederherstellen der eingetragenen Wörter und Händler
+- Deals nach Wörtern gefiltert ausblenden. Es werden Wörter aus dem Titel des Deals vorgeschlagen.
+- Alle Deals eines Händlers ausblenden.
+- Backup Speichern/Wiederherstellen der eingetragenen Wörter und Händler.
 - Über das Filter Menü von mydealz:
     - Kalte Deals ausblenden
     - Zu teure Deals ausblenden
