@@ -17,4 +17,5 @@
 [Mydealz Deals ausblenden mit Symbol-Button und Übersicht](https://greasyfork.org/de/scripts/521000-mydealz-deals-ausblenden-mit-symbol-button-und-%C3%BCbersicht)  
 [Mydealz Deals ausblenden](https://greasyfork.org/de/scripts/521041-mydealz-deals-ausblenden-mit-symbol-button-und-%C3%BCbersicht)  
 [mydealz Script mydealz Deal-Management: Deals filtern und ausblenden, alle Einstellungen per UI verwalten.] (https://greasyfork.org/de/scripts/522038-mydealz-script)  
+https://greasyfork.org/de/users/webhook-info
  
