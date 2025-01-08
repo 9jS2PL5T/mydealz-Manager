@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         mydealz Script 1.10.2
+// @name         mydealz Script 1.10.3
 // @namespace    http://tampermonkey.net/
-// @version      1.10.2
+// @version      1.10.3
 // @description  mydealz Deal-Management: Deals filtern und ausblenden, alle Einstellungen per UI verwalten.
 // @author       Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister) (https://github.com/grapefruit89) & Flo (https://www.mydealz.de/profile/Basics0119) (https://github.com/9jS2PL5T)
 // @license      MIT
@@ -12,6 +12,8 @@
 // ==/UserScript==
 
 // Versions-Änderungen:
+// 1.10.3:
+// Fix: Skript funktionierte nicht mehr bei dynamisch nachgeladenen Inhalten
 // 1.10.2:
 // Fix: Liste mit Wortvorschlägen wurde nicht korrekt angezeigt.
 // 1.10.1:
@@ -1121,18 +1123,22 @@ function createSettingsUI() {
 
     document.getElementById('restoreFileInput').addEventListener('change', restoreData);
 
-    // Unified focus handler
-    newWordInput.addEventListener('focus', () => {
-        // Get fresh words from current deal if none exist
-        if (suggestedWords.length === 0) {
-            suggestedWords = getWordsFromTitle(dealThatOpenedSettings);
-        }
+    // Add event listeners only if newWordInput exists
+    const newWordInput = document.getElementById('newWordInput');
+    if (newWordInput) {
+        // Unified focus handler
+        newWordInput.addEventListener('focus', () => {
+            // Get fresh words from current deal if none exist
+            if (suggestedWords.length === 0) {
+                suggestedWords = getWordsFromTitle(dealThatOpenedSettings);
+            }
 
-        // Always show suggestion list if words exist
-        if (suggestedWords.length > 0) {
-            updateSuggestionList();
-        }
-    }, { once: false }); // Allow multiple focus events
+            // Always show suggestion list if words exist
+            if (suggestedWords.length > 0) {
+                updateSuggestionList();
+            }
+        }, { once: false }); // Allow multiple focus events
+    }
 
     // Click Outside Handler anpassen
     createSuggestionClickHandler();
@@ -1213,10 +1219,21 @@ function updateSuggestionList() {
 }
 
 function initObserver() {
+    // Disconnect existing observer if it exists
+    if (observer) {
+        observer.disconnect();
+    }
+
+    // Reinitialize the observer
     observer.observe(document.body, {
         childList: true,
         subtree: true
     });
+
+    // Process any existing articles
+    processArticles();
+    addSettingsButton();
+    addHideButtons();
 }
 
 // Update addMerchantToList function
@@ -1528,17 +1545,9 @@ function cleanup() {
     // Reset suggestion state
     suggestedWords = [];
 
-    // Clean up all observers
-    if (observer) {
-        observer.disconnect();
-    }
-
-    document.querySelectorAll('[data-settings-added]').forEach(deal => {
-        if (deal._observer) {
-            deal._observer.disconnect();
-            delete deal._observer;
-        }
-    });
+    // Don't disconnect the main observer
+    // Instead, reinitialize it to ensure it's working
+    initObserver();
 }
 
 // 4. Complete UI state reset
