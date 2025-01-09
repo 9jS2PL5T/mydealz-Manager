@@ -22,6 +22,13 @@
 ## Web Tech  
 [MyDealz auf BuildWiht](https://builtwith.com/?https%3a%2f%2fwww.mydealz.de%2f)  
 
+## Andere Githubs
+[MydealzScraper](https://github.com/mhvuze/MydealzScraper)  
+[]()  
+[]()  
+[]()  
+[]()  
+[]()  
 
 ## Mydealz in anderen Ländern  
 [Niederlande](https://nl.pepper.com/)  
