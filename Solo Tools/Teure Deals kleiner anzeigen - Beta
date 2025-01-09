@@ -8,7 +8,7 @@
 // @grant        none
 // ==/UserScript==
 
-(function() {
+(function(DealShrinker) {
     'use strict';
 
     // Configuration
