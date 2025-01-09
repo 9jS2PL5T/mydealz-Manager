@@ -1,6 +1,6 @@
 ## Hier habe Ich alles mögliche Hochgeladen mit dem man später Chat GPT füttern kann, Sammlung ist aber noch im Aufbau  
 
-# Entwicklerkonsole für [1.1 Quelltext Hauptseite Deal Ausschntite](https://github.com/9jS2PL5T/mydealz-Manager/blob/main/MyDealz%20Quelltexte/1.1%20Quelltext%20Hauptseite%20Deal%20Ausschntite)  
+### Entwicklerkonsole für [1.1 Quelltext Hauptseite Deal Ausschntite](https://github.com/9jS2PL5T/mydealz-Manager/blob/main/MyDealz%20Quelltexte/1.1%20Quelltext%20Hauptseite%20Deal%20Ausschntite)  
 
 ``` js
 (function() {
