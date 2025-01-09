@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         mydealz Script 1.10.3
+// @name         mydealz Manager 1.11.2
 // @namespace    http://tampermonkey.net/
-// @version      1.10.3
-// @description  mydealz Deal-Management: Deals filtern und ausblenden, alle Einstellungen per UI verwalten.
+// @version      1.11.2
+// @description  Deals gezielt ausblenden mittels X Button, Filtern nach Händlern und Wörtern im Titel. Teure und kalte Deals ausblenden.
 // @author       Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister) (https://github.com/grapefruit89) & Flo (https://www.mydealz.de/profile/Basics0119) (https://github.com/9jS2PL5T)
 // @license      MIT
 // @match        https://www.mydealz.de/*
@@ -12,17 +12,10 @@
 // ==/UserScript==
 
 // Versions-Änderungen:
-// 1.10.3:
-// Fix: Skript funktionierte nicht mehr bei dynamisch nachgeladenen Inhalten
-// 1.10.2:
-// Fix: Liste mit Wortvorschlägen wurde nicht korrekt angezeigt.
-// 1.10.1:
-// Liste Wort-/Händlerfilter lässt sich nun umschalten. Ein-/Ausblenden mit gleichen Button.
-// Einstellungen werden automatisch geschlossen, sobald ein Händler oder ein neues Wort zur Filterliste hinzugefügt wurde.
-// Das Design des settingsButton ist nun an die anderen Button angeglichen.
-// Inhalt der Einstellungen aktualisiert sich nun wenn diese geöffnet sind und man den Button in einem anderen Deal anklickt.
-// Touchscreen: Deal ausblenden Button verschwindet beim Scrollen.
-// Händler ID aus der Liste des Händlerfilters entfernt. Nur noch Namen der Händler sichtbar.
+// 1.11.2
+// Fix: Fehlermeldung maxpriceinput entfernt da durch maxPriceFilterInput ersetzt
+// 1.11.1
+// Fix: wordsuggestions schließen sich nicht mehr automatisch
 
 // Einbinden von Font Awesome für Icons
 const fontAwesomeLink = document.createElement('link');
@@ -35,15 +28,15 @@ const IS_TOUCH_DEVICE = ('ontouchstart' in window) ||
       (navigator.maxTouchPoints > 0) ||
       (navigator.msMaxTouchPoints > 0);
 
-// Add after other constants
-const MAX_PRICE_KEY = 'maxPrice';
-
 // --- 1. Initial Setup ---
 const EXCLUDE_WORDS_KEY = 'excludeWords';
 const EXCLUDE_MERCHANTS_KEY = 'excludeMerchantIDs';
 const HIDDEN_DEALS_KEY = 'hiddenDeals';
 const EXCLUDE_MERCHANTS_DATA_KEY = 'excludeMerchantsData';
 const MERCHANT_PAGE_SELECTOR = '.merchant-banner';
+const HIDE_COLD_DEALS_KEY = 'hideColdDeals';
+const MAX_PRICE_KEY = 'maxPrice';
+
 
 // Load data immediately
 let excludeWords, excludeMerchantIDs, hiddenDeals;
@@ -56,6 +49,7 @@ let merchantListDiv = null;
 let wordsListDiv = null;
 let uiClickOutsideHandler = null;
 let isSettingsOpen = false;
+let hideColdDeals = localStorage.getItem(HIDE_COLD_DEALS_KEY) === 'true';
 
 try {
     excludeWords = JSON.parse(localStorage.getItem(EXCLUDE_WORDS_KEY)) || [];
@@ -122,6 +116,18 @@ const observer = new MutationObserver((mutations) => {
 
 // --- 2. Hilfsfunktionen ---
 function shouldExcludeArticle(article) {
+
+    // Add temperature check
+    if (hideColdDeals) {
+        const tempElement = article.querySelector('.cept-vote-temp .overflow--wrap-off');
+        if (tempElement) {
+            const temp = parseInt(tempElement.textContent);
+            if (!isNaN(temp) && temp < 0) {
+                return true;
+            }
+        }
+    }
+
     const titleElement = article.querySelector('.thread-title');
     const merchantLink = article.querySelector('a[href*="merchant-id="]');
 
@@ -415,6 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
     addSettingsButton();
     addMerchantPageHideButton();
     initObserver();
+    injectMaxPriceFilter(); // Add this line
 });
 
 function addHideButtons() {
@@ -958,26 +965,6 @@ function createSettingsUI() {
         <!-- Merchant Hide Button -->
         ${merchantButtonHtml}
 
-        <!-- Price Filter Section -->
-        <div style="margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 3px;">
-            <div style="margin-bottom: 8px; font-size: 0.9em; color: #333;">
-                Maximalpreis. Deals über diesem Wert, werden ausgeblendet.
-            </div>
-            <div style="display: flex; align-items: center;">
-                <input type="number"
-                    id="maxPriceInput"
-                    value="${maxPrice}"
-                    min="0"
-                    step="0.01"
-                    placeholder="Max. Preis"
-                    style="width: 100px; padding: 8px; border: 1px solid #ccc; border-radius: 3px;">
-                <span style="margin-left: 8px;">€ max.</span>
-            </div>
-            <div style="font-size: 0.8em; color: #666; margin-top: 5px;">
-                0 = keine Preisfilterung
-            </div>
-        </div>
-
         <!-- List Management Section -->
         <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
             <button id="showWordsListButton"
@@ -1150,15 +1137,6 @@ function createSettingsUI() {
 
     // Add cleanup to window unload
     window.addEventListener('unload', cleanup);
-
-    // Add to createSettingsUI after other event listeners
-    document.getElementById('maxPriceInput').addEventListener('change', (e) => {
-        const price = parseFloat(e.target.value);
-        if (!isNaN(price) && price >= 0) {
-            saveMaxPrice(price);
-            processArticles();
-        }
-    });
 
     // Get initial word suggestions
     suggestedWords = dealThatOpenedSettings ? getWordsFromTitle(dealThatOpenedSettings) : [];
@@ -1520,6 +1498,12 @@ function cleanup() {
         isSettingsOpen = false;
     }
 
+    // Add word suggestion list cleanup
+    const suggestionList = document.getElementById('wordSuggestionList');
+    if (suggestionList) {
+        suggestionList.remove();
+    }
+
     // Close merchant & words lists
     if (merchantListDiv?.parentNode) merchantListDiv.remove();
     if (wordsListDiv?.parentNode) wordsListDiv.remove();
@@ -1582,3 +1566,105 @@ function createSuggestionClickHandler() {
     document.addEventListener('click', suggestionClickHandler);
     return suggestionClickHandler;
 }
+
+// Add function to inject max price filter
+function injectMaxPriceFilter() {
+    const filterForm = document.querySelector('.subNavMenu-list form:first-of-type ul');
+    if (!filterForm) return;
+
+    const priceFilterItem = document.createElement('li');
+    const coldDealsFilterItem = document.createElement('li');
+
+    priceFilterItem.className = 'flex boxAlign-jc--all-sb boxAlign-ai--all-c space--h-3 space--v-3 subNavMenu-item--separator';
+    coldDealsFilterItem.className = 'flex boxAlign-jc--all-sb boxAlign-ai--all-c space--h-3 space--v-3 subNavMenu-item--separator';
+
+    // Keep existing HTML structure but change insertion order
+    coldDealsFilterItem.innerHTML = `
+        <span class="subNavMenu-text mute--text space--r-2 overflow--wrap-off">
+            Kalte Deals ausblenden
+        </span>
+        <label class="checkbox checkbox--brand checkbox--mode-special">
+            <input
+                class="input checkbox-input"
+                type="checkbox"
+                id="hideColdDealsCheckbox"
+                value="1"
+                ${hideColdDeals ? 'checked' : ''}
+            >
+            <span class="tGrid-cell tGrid-cell--shrink">
+                <span class="checkbox-box flex--inline boxAlign-jc--all-c boxAlign-ai--all-c">
+                    <svg width="18px" height="14px" class="icon icon--tick checkbox-tick">
+                        <use xlink:href="/assets/img/ico_c6302.svg#tick"></use>
+                    </svg>
+                </span>
+            </span>
+        </label>
+    `;
+
+    priceFilterItem.innerHTML = `
+        <span class="subNavMenu-text mute--text space--r-2 overflow--wrap-off">
+            Maximalpreis filtern
+        </span>
+        <input
+            type="number"
+            id="maxPriceFilterInput"
+            value="${maxPrice}"
+            min="0"
+            step="0.01"
+            placeholder="€"
+            style="
+                width: 70px;
+                padding: 4px 8px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                margin-left: auto;
+                -webkit-appearance: textfield;
+                -moz-appearance: textfield;
+                appearance: textfield;
+            "
+        >
+    `;
+
+    // Change to appendChild to add at end of list
+    filterForm.appendChild(coldDealsFilterItem);
+    filterForm.appendChild(priceFilterItem);
+
+    // Add event listeners
+    const priceInput = document.getElementById('maxPriceFilterInput');
+    if (priceInput) {
+        priceInput.addEventListener('change', (e) => {
+            const price = parseFloat(e.target.value);
+            if (!isNaN(price) && price >= 0) {
+                saveMaxPrice(price);
+                processArticles();
+            }
+        });
+    }
+    // Update checkbox handler
+    const checkbox = document.getElementById('hideColdDealsCheckbox');
+    if (checkbox) {
+        checkbox.addEventListener('change', () => {
+            hideColdDeals = checkbox.checked;
+            localStorage.setItem(HIDE_COLD_DEALS_KEY, hideColdDeals);
+            processArticles();
+        });
+    }
+}
+
+// Add observer for filter UI changes
+const filterObserver = new MutationObserver((mutations) => {
+    mutations.forEach(mutation => {
+        if (mutation.addedNodes.length) {
+            const filterMenu = document.querySelector('.subNavMenu-list');
+            if (filterMenu && !document.getElementById('maxPriceFilterInput')) {
+                injectMaxPriceFilter();
+            }
+        }
+    });
+});
+
+// Start observing filter area
+filterObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+});
