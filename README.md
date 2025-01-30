@@ -1,8 +1,8 @@
 Installation: https://greasyfork.org/de/scripts/522038-mydealz-manager
 
 Funktioniert auf:
-mydealz.de
-preisjaeger.at
+- mydealz.de
+- preisjaeger.at
 
 Funktionen
 - Einzelnen Deal mittels X Button ausblenden. Der Button erscheint am Desktop PC, wenn man mit der Maus über der Temperatur schwebt. Auf Touchscreen Geräten muss man 1x auf die Temperatur tippen, damit der Button zum Ausblenden angezeigt wird
