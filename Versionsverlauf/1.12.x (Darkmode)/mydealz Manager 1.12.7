@@ -19,6 +19,7 @@
 // FIX: Daten im GM Storage wurden bei einer neuen Script Version nicht übernommen. Daher werden Daten nun auch wieder im localstorage gespeichert.
 // CHANGE: Backup - maxprice und hidecolddeals werden nun auch im Backup gesichert und wiederhergestellt.
 // CHANGE: Design an mydealz Designänderung angepasst.
+// REMOVE: Nicht benötigter Code wurde entfernt.
 
 // Einbinden von Font Awesome für Icons
 const fontAwesomeLink = document.createElement('link');
@@ -76,7 +77,6 @@ themeObserver.observe(document.body, {
 const EXCLUDE_WORDS_KEY = 'excludeWords';
 const EXCLUDE_MERCHANTS_KEY = 'excludeMerchantIDs';
 const HIDDEN_DEALS_KEY = 'hiddenDeals';
-const EXCLUDE_MERCHANTS_DATA_KEY = 'excludeMerchantsData';
 const MERCHANT_PAGE_SELECTOR = '.merchant-banner';
 const HIDE_COLD_DEALS_KEY = 'hideColdDeals';
 const MAX_PRICE_KEY = 'maxPrice';
@@ -87,7 +87,6 @@ let excludeWords = [];
 let excludeMerchantIDs = [];
 let hiddenDeals = [];
 let suggestedWords = [];
-let initialSuggestionListCreated = false;
 let activeSubUI = null;
 let dealThatOpenedSettings = null;
 let settingsDiv = null;
@@ -101,13 +100,11 @@ let suggestionClickHandler = null;
 
 // Sync-Funktion für beide Storage-Systeme
 async function syncStorage() {
-    console.log('=== Storage Sync Start ===');
 
     // Prüfe ob Migration bereits durchgeführt wurde
     const migrationComplete = GM_getValue('migrationComplete', false);
 
     if (migrationComplete) {
-        console.log('Migration bereits durchgeführt, überspringe...');
         return;
     }
 
@@ -118,28 +115,12 @@ async function syncStorage() {
     const gmHideColdDeals = GM_getValue('hideColdDeals', null);
     const gmMaxPrice = GM_getValue('maxPrice', null);
 
-    console.log('Initial GM Storage:', {
-        excludeWords: gmExcludeWords,
-        excludeMerchants: gmExcludeMerchants,
-        hiddenDeals: gmHiddenDeals,
-        hideColdDeals: gmHideColdDeals,
-        maxPrice: gmMaxPrice
-    });
-
     // Prüfe ob localStorage Daten hat
     const lsExcludeWords = JSON.parse(localStorage.getItem('excludeWords') || 'null');
     const lsExcludeMerchants = JSON.parse(localStorage.getItem('excludeMerchantsData') || 'null');
     const lsHiddenDeals = JSON.parse(localStorage.getItem('hiddenDeals') || 'null');
     const lsHideColdDeals = localStorage.getItem('hideColdDeals') || 'null';
     const lsMaxPrice = localStorage.getItem('maxPrice') || 'null';
-
-    console.log('Initial localStorage:', {
-        excludeWords: lsExcludeWords,
-        excludeMerchants: lsExcludeMerchants,
-        hiddenDeals: lsHiddenDeals,
-        hideColdDeals: lsHideColdDeals,
-        maxPrice: lsMaxPrice
-    });
 
     // Migration von localStorage zu GM_storage wenn nötig
     let migrationPerformed = false;
@@ -171,9 +152,7 @@ async function syncStorage() {
     }
 
     if (migrationPerformed) {
-        console.log('=== Migration durchgeführt ===');
         GM_setValue('migrationComplete', true);
-        console.log('Migration als abgeschlossen markiert');
     }
 
     // Synchronisiere localStorage mit GM_Storage
@@ -183,7 +162,6 @@ async function syncStorage() {
     localStorage.setItem('hideColdDeals', (gmHideColdDeals || false).toString());
     localStorage.setItem('maxPrice', (gmMaxPrice || '0').toString());
 
-    console.log('=== Storage Sync Complete ===');
 }
 
 function updateAllUIThemes(isLight) {
@@ -523,7 +501,6 @@ function saveHiddenDeals() {
 
 // Speichern der `excludeWords` und `excludeMerchantIDs`
 function saveExcludeWords(words) {
-    console.log('=== Saving Words ===');
 
     // Normalisiere nur Groß-/Kleinschreibung und entferne Duplikate
     const normalizedWords = words.reduce((acc, word) => {
@@ -545,11 +522,9 @@ function saveExcludeWords(words) {
     GM_setValue('excludeWords', normalizedWords);
     localStorage.setItem('excludeWords', JSON.stringify(normalizedWords));
 
-    console.log('Words saved:', normalizedWords);
 }
 
 function loadExcludeWords() {
-    console.log('=== Loading Words ===');
 
     // Versuche zuerst GM Storage
     const gmWords = GM_getValue('excludeWords', []);
@@ -561,11 +536,6 @@ function loadExcludeWords() {
     } catch (e) {
         console.error('Error loading words from localStorage:', e);
     }
-
-    console.log('Loaded Words:', {
-        fromGM: gmWords,
-        fromLS: lsWords
-    });
 
     // Kombiniere beide, GM hat Priorität
     return gmWords.length > 0 ? gmWords : lsWords;
@@ -805,11 +775,6 @@ function addHideButtons() {
                     buttonVisible = false;
                     hideButtonContainer.style.display = 'none';
                 } else if (hideButtonContainer.style.display === 'block') {
-                    console.warn('Button still visible despite buttonVisible=false:', {
-                        dealId,
-                        buttonVisible,
-                        hideButtonDisplay: hideButtonContainer.style.display
-                    });
                 }
             };
 
@@ -820,18 +785,10 @@ function addHideButtons() {
                 e.preventDefault();
                 e.stopPropagation();
 
-                console.log('Touch event on deal:', {
-                    dealId,
-                    buttonVisible,
-                    hideButtonDisplay: hideButtonContainer.style.display
-                });
-
                 if (!buttonVisible) {
                     buttonVisible = true;
                     hideButtonContainer.style.display = 'block';
-                    console.log('Showing button for deal:', dealId);
                 } else {
-                    console.log('Hiding deal completely:', dealId);
                     hiddenDeals.push(dealId);
                     saveHiddenDeals();
                     hideDeal(deal);
@@ -840,15 +797,8 @@ function addHideButtons() {
             }, true);
 
             targetElement.addEventListener('touchend', () => {
-                console.log('Touch end event for deal:', {
-                    dealId,
-                    buttonVisible,
-                    hideButtonDisplay: hideButtonContainer.style.display
-                });
-
                 if (!buttonVisible) {
                     hideButtonContainer.style.display = 'none';
-                    console.log('Hide button hidden on touchend for deal:', dealId);
                 }
             }, true);
         } else {
@@ -887,20 +837,17 @@ function decodeHtml(html) {
 // --- 3. Backup- und Restore-Funktionen ---
 function backupData() {
     try {
-        // Aktuelle Daten sammeln
+        // Aktuelle Daten neu laden
+        const currentWords = loadExcludeWords();
+        const currentMerchants = loadExcludeMerchants();
+
+        // Backup mit aktuellen Daten erstellen
         const backup = {
-            excludeWords: excludeWords,
-            excludeMerchantIDs: excludeMerchantIDs,
-            merchantsData: loadExcludeMerchants(),
+            excludeWords: currentWords,
+            merchantsData: currentMerchants, // Nur merchantsData speichern
             maxPrice: maxPrice,
             hideColdDeals: hideColdDeals
         };
-
-        // Debug Log vor dem Speichern
-        console.log('Creating backup:', {
-            wordCount: backup.excludeWords.length,
-            merchantCount: backup.merchantsData.length
-        });
 
         const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -919,7 +866,6 @@ function backupData() {
 
 // Restore-Funktion
 function restoreData(event) {
-    console.log('=== Restore Data Start ===');
     const file = event.target.files[0];
     if (!file || file.type !== 'application/json') {
         alert('Bitte wählen Sie eine gültige JSON-Datei aus.');
@@ -930,24 +876,24 @@ function restoreData(event) {
     reader.onload = function(e) {
         try {
             const restoredData = JSON.parse(e.target.result);
-            console.log('Restored data from file:', restoredData);
 
             // Validiere Backup-Daten
             if (!restoredData.excludeWords || !Array.isArray(restoredData.excludeWords)) {
                 throw new Error('Ungültiges Backup-Format: Keine Wörter-Liste gefunden');
             }
 
-            // Wiederherstellen der Wörter
+            // Restore excludeWords
             GM_setValue('excludeWords', restoredData.excludeWords);
             localStorage.setItem('excludeWords', JSON.stringify(restoredData.excludeWords));
             excludeWords = restoredData.excludeWords;
 
-            // Wiederherstellen der Händler-Daten
+            // Restore merchantsData und extrahiere IDs
             if (restoredData.merchantsData) {
                 saveExcludeMerchants(restoredData.merchantsData);
+                // excludeMerchantIDs werden automatisch in saveExcludeMerchants gesetzt
             }
 
-            // Wiederherstellen von maxPrice
+            // Restore maxPrice
             if (typeof restoredData.maxPrice === 'number') {
                 saveMaxPrice(restoredData.maxPrice);
                 const maxPriceInput = document.getElementById('maxPriceFilterInput');
@@ -959,7 +905,7 @@ function restoreData(event) {
                 }
             }
 
-            // Wiederherstellen von hideColdDeals
+            // Restore hideColdDeals
             if (typeof restoredData.hideColdDeals === 'boolean') {
                 hideColdDeals = restoredData.hideColdDeals;
                 GM_setValue('hideColdDeals', hideColdDeals);
@@ -970,7 +916,6 @@ function restoreData(event) {
                 }
             }
 
-            // UI aktualisieren und Artikel neu filtern
             if (isSettingsOpen) {
                 updateUITheme();
             }
@@ -1928,15 +1873,10 @@ function addMerchantPageHideButton() {
     // Check if we're on a merchant page
     const urlParams = new URLSearchParams(window.location.search);
     const merchantId = urlParams.get('merchant-id');
-    if (!merchantId) return;
-
-    // Find merchant header
     const merchantBanner = document.querySelector(MERCHANT_PAGE_SELECTOR);
-    if (!merchantBanner) return;
-
-    // Get merchant name from page
     const merchantName = document.querySelector('.merchant-banner__title')?.textContent.trim();
-    if (!merchantName) return;
+
+    if (!merchantId || !merchantBanner || !merchantName) return;
 
     // Create hide button container
     const hideButtonContainer = document.createElement('div');
@@ -2073,33 +2013,6 @@ function saveMaxPrice(price) {
     maxPrice = price;
 }
 
-// Add after existing global functions
-function merchantButtonHandler() {
-    if (!dealThatOpenedSettings) return;
-
-    const merchantLink = dealThatOpenedSettings.querySelector('a[href*="merchant-id="]');
-    if (!merchantLink) return;
-
-    const merchantIDMatch = merchantLink.getAttribute('href').match(/merchant-id=(\d+)/);
-    if (!merchantIDMatch) return;
-
-    const merchantID = merchantIDMatch[1];
-    const merchantName = dealThatOpenedSettings.querySelector('a[data-t="merchantLink"]').textContent.trim();
-
-    const merchantsData = loadExcludeMerchants();
-    if (!merchantsData.some(m => m.id === merchantID)) {
-        merchantsData.unshift({ id: merchantID, name: merchantName });
-        saveExcludeMerchants(merchantsData);
-        processArticles();
-        cleanup(); // Close settings UI
-
-        // Update lists if UI open
-        if (activeSubUI === 'merchant') {
-            updateActiveLists();
-        }
-    }
-}
-
 // Add after other utility functions
 function handleWordSelection(e) {
     e.preventDefault();
@@ -2210,11 +2123,6 @@ function injectMaxPriceFilter() {
     // Get theme colors for logging
     const isDark = isDarkMode();
     const colors = getThemeColors();
-    console.log('MaxPriceFilter Theme:', {
-        isDarkMode: isDark,
-        inputBackground: colors.inputBg,
-        textColor: colors.text
-    });
 
     // Create filter items with optimized HTML
     const filterItems = document.createElement('div');
@@ -2253,7 +2161,7 @@ function injectMaxPriceFilter() {
                 })}"
                 placeholder="€"
                 style="
-                    width: 100px;
+                    width: 80px;
                     padding: 4px 8px;
                     border: 1px solid var(--border-color, ${isDarkMode() ? '#6b6d6d' : '#c5c7ca'});
                     border-radius: 4px;
@@ -2280,13 +2188,6 @@ function injectMaxPriceFilter() {
     const maxPriceInput = document.getElementById('maxPriceFilterInput');
     if (maxPriceInput) {
         const computedStyle = window.getComputedStyle(maxPriceInput);
-        console.log('MaxPriceFilter Applied Styles:', {
-            isDarkMode: isDark,
-            computedBackground: computedStyle.backgroundColor,
-            computedColor: computedStyle.color,
-            elementStyle: maxPriceInput.style.backgroundColor,
-            important: colors.inputBg + ' !important'
-        });
     }
 
     // Optimized input handling
@@ -2352,43 +2253,6 @@ function injectMaxPriceFilter() {
             localStorage.setItem(HIDE_COLD_DEALS_KEY, hideColdDeals);
             processArticles();
         });
-    }
-}
-
-// Optional: Migration from localStorage to GM storage
-function migrateFromLocalStorage() {
-    // Migrate words
-    const oldWords = JSON.parse(localStorage.getItem('excludeWords') || '[]');
-    if (oldWords.length > 0) {
-        GM_setValue('excludeWords', oldWords);
-        localStorage.removeItem('excludeWords');
-    }
-
-    // Migrate merchants
-    const oldMerchants = JSON.parse(localStorage.getItem('excludeMerchantsData') || '[]');
-    if (oldMerchants.length > 0) {
-        GM_setValue('excludeMerchantsData', oldMerchants);
-        localStorage.removeItem('excludeMerchantsData');
-    }
-
-    // Migrate hidden deals
-    const oldHiddenDeals = JSON.parse(localStorage.getItem('hiddenDeals') || '[]');
-    if (oldHiddenDeals.length > 0) {
-        GM_setValue('hiddenDeals', oldHiddenDeals);
-        localStorage.removeItem('hiddenDeals');
-    }
-
-    // Migrate settings
-    const oldHideColdDeals = localStorage.getItem('hideColdDeals');
-    if (oldHideColdDeals !== null) {
-        GM_setValue('hideColdDeals', oldHideColdDeals === 'true');
-        localStorage.removeItem('hideColdDeals');
-    }
-
-    const oldMaxPrice = localStorage.getItem('maxPrice');
-    if (oldMaxPrice !== null) {
-        GM_setValue('maxPrice', oldMaxPrice);
-        localStorage.removeItem('maxPrice');
     }
 }
 
