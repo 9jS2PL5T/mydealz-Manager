@@ -16,7 +16,7 @@
 // Versions-Änderungen
 // FIX: Maximalpreis - Deals mit Preis >999,99 wurden nicht gefiltert, wenn Maximalpreis niedriger war. Komma wurde nicht berücksichtigt (Bsp 999,99 -> 999999).
 // FIX: Der Wortfilter hat Groß- und Kleinschreibung unterschieden, wodurch doppelte Einträge entstanden sind (z. B. 'geschirrspüler' und 'Geschirrspüler').
-// FIX: Daten im GM Storage wurden bei einer neuen Script Version nicht übernommen. Daher werden Daten nun auch wieder im localstorage gespeichert.
+// FIX: Gespeicherte Daten wurden bei einem Script Update nicht übernommen, da sie seit 1.12.5 nur noch im GM Storage lagen. Von dort ließen sie sich aber nicht in eine neuere Version übernehmen. Daher werden Daten nun auch wieder im localstorage gespeichert.
 // CHANGE: Backup - maxprice und hidecolddeals werden nun auch im Backup gesichert und wiederhergestellt.
 // CHANGE: Design an mydealz Designänderung angepasst.
 // REMOVE: Nicht benötigter Code wurde entfernt.
