@@ -1,4 +1,5 @@
 Installation: https://greasyfork.org/de/scripts/522038-mydealz-manager
+Für Smartphone und Desktop optimiert.
 
 Funktioniert auf:
 - mydealz.de
