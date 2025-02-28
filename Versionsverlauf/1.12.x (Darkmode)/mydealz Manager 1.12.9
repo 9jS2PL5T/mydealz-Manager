@@ -1,0 +1,2587 @@
+// ==UserScript==
+// @name         mydealz Manager
+// @namespace    http://tampermonkey.net/
+// @version      1.12.9
+// @description  Deals gezielt ausblenden mittels X Button, Filtern nach Händlern und Wörtern im Titel. Teure und kalte Deals ausblenden.
+// @author       Flo (https://www.mydealz.de/profile/Basics0119) (https://github.com/9jS2PL5T) & Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister) (https://github.com/grapefruit89)
+// @license      MIT
+// @match        https://www.mydealz.de/*
+// @match        https://www.preisjaeger.at/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=mydealz.de
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_deleteValue
+// ==/UserScript==
+
+// Versions-Änderungen
+// FIX: Beim Scrollen im SettingsUI wurde teilweise die Website gescrollt.
+// FIX: Auf Touch-Geräten war keine Eingabe im Maximalpreis Filter möglich.
+// FIX: Wurde während der Suche in Wort-/Händlerliste ein Eintrag gelöscht, sprang der Zähler von xx/xx auf xx und zeigte nur noch die Gesamtzahl der Einträge.
+// CHANGE: Optimierung der Vorschläge in der WortSuggestionList.
+// CHANGE: Robustere und präzisere Wortfilterung.
+
+// --- 1. Initialisierung und Grundeinstellungen ---
+// Einbinden von Font Awesome für Icons
+const fontAwesomeLink = document.createElement('link');
+fontAwesomeLink.rel = 'stylesheet';
+fontAwesomeLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css';
+document.head.appendChild(fontAwesomeLink);
+
+const preventAutoCloseStyle = document.createElement('style');
+preventAutoCloseStyle.textContent = `
+    .subNavMenu.keep-open {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+    }
+`;
+document.head.appendChild(preventAutoCloseStyle);
+
+// Add constant for touch detection
+const IS_TOUCH_DEVICE = ('ontouchstart' in window) ||
+      (navigator.maxTouchPoints > 0) ||
+      (navigator.msMaxTouchPoints > 0);
+
+// Konstanten und Variablen
+const HIDDEN_DEALS_KEY = 'hiddenDeals';
+const MERCHANT_PAGE_SELECTOR = '.merchant-banner';
+const HIDE_COLD_DEALS_KEY = 'hideColdDeals';
+const MAX_PRICE_KEY = 'maxPrice';
+
+function throttle(func, limit) {
+    let inThrottle;
+    return function(...args) {
+        if (!inThrottle) {
+            func.apply(this, args);
+            inThrottle = true;
+            setTimeout(() => {
+                inThrottle = false;
+                return false;
+            }, limit);
+        }
+    }
+}
+
+// DOM-Beobachter einrichten
+const observer = new MutationObserver(throttle(() => {
+    processArticles();
+    addSettingsButton();
+    addHideButtons();
+}, 250));
+
+// Filter-UI Beobachter
+const filterObserver = new MutationObserver((mutations) => {
+    mutations.forEach(mutation => {
+        if (mutation.addedNodes.length) {
+            const filterMenu = document.querySelector('.subNavMenu-list');
+            if (filterMenu && !document.getElementById('maxPriceFilterInput')) {
+                injectMaxPriceFilter();
+            }
+        }
+    });
+});
+
+// Globale Zustandsvariablen
+let excludeWords = [];
+let excludeMerchantIDs = [];
+let hiddenDeals = [];
+let suggestedWords = [];
+let activeSubUI = null;
+let dealThatOpenedSettings = null;
+let settingsDiv = null;
+let merchantListDiv = null;
+let wordsListDiv = null;
+let uiClickOutsideHandler = null;
+let isSettingsOpen = false;
+let hideColdDeals = localStorage.getItem(HIDE_COLD_DEALS_KEY) === 'true';
+let maxPrice = parseFloat(localStorage.getItem(MAX_PRICE_KEY)) || 0;
+let suggestionClickHandler = null;
+
+// --- 2. Theme-System ---
+// Farbkonstanten für Light/Dark Mode
+const THEME_COLORS = {
+    light: {
+        background: '#f9f9f9',
+        border: '#ccc',
+        text: '#333',
+        buttonBg: '#f0f0f0',
+        buttonBorder: '#ccc',
+        inputBg: '#fff',
+        itemBg: '#f0f0f0',
+        itemHoverBg: '#e8e8e8'
+    },
+    dark: {
+        background: '#1f1f1f',
+        border: '#2d2d2d',
+        text: '#ffffff',
+        buttonBg: '#2d2d2d',
+        buttonBorder: '#3d3d3d',
+        inputBg: '#2d2d2d',
+        itemBg: '#2d2d2d',
+        itemHoverBg: '#3d3d3d'
+    }
+};
+
+// Theme-Erkennung
+function isDarkMode() {
+    // Check system preference
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    // Check document theme
+    const htmlElement = document.documentElement;
+    const bodyElement = document.body;
+
+    // Check for dark theme indicators
+    const isDark =
+          htmlElement.classList.contains('dark') ||
+          bodyElement.classList.contains('dark') ||
+          htmlElement.getAttribute('data-theme') === 'dark' ||
+          document.querySelector('html[data-theme="dark"]') !== null ||
+          (prefersDark && !htmlElement.classList.contains('light')); // System dark + no explicit light
+
+    return isDark;
+}
+
+// Theme-Farben abrufen
+function getThemeColors() {
+    const isDark = isDarkMode();
+    return isDark ? THEME_COLORS.dark : THEME_COLORS.light;
+}
+
+// Theme Observer erstellen
+const themeObserver = new MutationObserver(() => {
+    requestAnimationFrame(() => {
+        const isLight = !isDarkMode();
+        updateAllUIThemes(isLight);
+    });
+});
+
+// Observer für beide Elemente einrichten
+const targetNodes = [document.documentElement, document.body];
+targetNodes.forEach(node => {
+    themeObserver.observe(node, {
+        attributes: true,
+        attributeFilter: ['class', 'data-theme']
+    });
+});
+
+// System Theme Observer
+const systemThemeObserver = window.matchMedia('(prefers-color-scheme: dark)');
+systemThemeObserver.addEventListener('change', () => {
+    requestAnimationFrame(() => {
+        const isLight = !isDarkMode();
+        updateAllUIThemes(isLight);
+    });
+});
+
+// Hide Button Theme Observer
+const hideButtonThemeObserver = new MutationObserver(() => {
+    const isLight = !isDarkMode();
+
+    requestAnimationFrame(() => {
+        document.querySelectorAll('.custom-hide-button').forEach(button => {
+            if (button) {
+                const bgColor = isLight ? '#ffffff' : '#1d1f20';
+                const borderColor = isLight ? 'rgba(3,12,25,0.23)' : 'rgb(107, 109, 109)';
+                button.style.cssText = `
+                    position: absolute !important;
+                    left: 50% !important;
+                    top: 50% !important;
+                    transform: translate(-50%, -50%) !important;
+                    z-index: 10002 !important;
+                    background: ${bgColor} !important;
+                    border: 1px solid ${borderColor} !important;
+                    border-radius: 50% !important;
+                    cursor: pointer !important;
+                    padding: 4px !important;
+                    width: 28px !important;
+                    height: 28px !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    pointer-events: all !important;
+                    box-shadow: none !important;
+                    font-size: 12px !important;
+                `;
+            }
+        });
+
+        // Update settings UI wenn offen
+        if (isSettingsOpen) {
+            updateUITheme();
+        }
+    });
+});
+
+// Start observing theme changes
+hideButtonThemeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['class']
+});
+
+// Theme Update Funktionen
+function updateAllUIThemes(isLight) {
+    // Update buttons
+    document.querySelectorAll('.custom-hide-button').forEach(button => {
+        if (button) {
+            const bgColor = isLight ? '#ffffff' : '#1d1f20';
+            button.style.setProperty('background', bgColor, 'important');
+        }
+    });
+
+    // Update open UIs
+    if (isSettingsOpen || activeSubUI) {
+        updateUITheme();
+    }
+
+    // Update filter menu if open
+    const filterMenu = document.querySelector('.subNavMenu-list');
+    if (filterMenu) {
+        const colors = getThemeColors();
+        const inputs = filterMenu.querySelectorAll('input');
+        inputs.forEach(input => {
+            input.style.borderColor = colors.border;
+            input.style.backgroundColor = colors.inputBg;
+            input.style.color = colors.text;
+        });
+    }
+}
+
+// --- 3. Datenverwaltung ---
+// Storage-Synchronisation
+async function syncStorage() {
+    // Prüfe ob Migration bereits durchgeführt wurde
+    const migrationComplete = GM_getValue('migrationComplete', false);
+
+    // Lese Daten aus beiden Speichern
+    const gmExcludeWords = GM_getValue('excludeWords', null);
+    const gmExcludeMerchants = GM_getValue('excludeMerchantsData', null);
+    const gmHiddenDeals = GM_getValue('hiddenDeals', null);
+    const gmHideColdDeals = GM_getValue('hideColdDeals', null);
+    const gmMaxPrice = GM_getValue('maxPrice', null);
+
+    const lsExcludeWords = JSON.parse(localStorage.getItem('excludeWords') || 'null');
+    const lsExcludeMerchants = JSON.parse(localStorage.getItem('excludeMerchantsData') || 'null');
+    const lsHiddenDeals = JSON.parse(localStorage.getItem('hiddenDeals') || 'null');
+    const lsHideColdDeals = localStorage.getItem('hideColdDeals') || 'null';
+    const lsMaxPrice = localStorage.getItem('maxPrice') || 'null';
+
+    let migrationPerformed = false;
+
+    // Migriere Wörter
+    const effectiveWords = gmExcludeWords || lsExcludeWords || [];
+    if (effectiveWords.length > 0) {
+        GM_setValue('excludeWords', effectiveWords);
+        localStorage.setItem('excludeWords', JSON.stringify(effectiveWords));
+        excludeWords = effectiveWords;
+        migrationPerformed = true;
+    }
+
+    // Migriere Händler
+    const effectiveMerchants = gmExcludeMerchants || lsExcludeMerchants || [];
+    if (effectiveMerchants.length > 0) {
+        GM_setValue('excludeMerchantsData', effectiveMerchants);
+        excludeMerchantIDs = effectiveMerchants.map(m => m.id);
+        GM_setValue('excludeMerchantIDs', excludeMerchantIDs);
+        localStorage.setItem('excludeMerchantsData', JSON.stringify(effectiveMerchants));
+        migrationPerformed = true;
+    }
+
+    // Migriere versteckte Deals
+    const effectiveHiddenDeals = gmHiddenDeals || lsHiddenDeals || [];
+    if (effectiveHiddenDeals.length > 0) {
+        GM_setValue('hiddenDeals', effectiveHiddenDeals);
+        localStorage.setItem('hiddenDeals', JSON.stringify(effectiveHiddenDeals));
+        hiddenDeals = effectiveHiddenDeals;
+        migrationPerformed = true;
+    }
+
+    // Migriere Einstellungen
+    if (!migrationComplete) {
+        if (gmHideColdDeals !== null || lsHideColdDeals !== 'null') {
+            const effectiveHideColdDeals = gmHideColdDeals ?? (lsHideColdDeals === 'true');
+            GM_setValue('hideColdDeals', effectiveHideColdDeals);
+            localStorage.setItem('hideColdDeals', effectiveHideColdDeals.toString());
+            hideColdDeals = effectiveHideColdDeals;
+            migrationPerformed = true;
+        }
+
+        if (gmMaxPrice !== null || lsMaxPrice !== 'null') {
+            const effectiveMaxPrice = gmMaxPrice || lsMaxPrice;
+            GM_setValue('maxPrice', effectiveMaxPrice);
+            localStorage.setItem('maxPrice', effectiveMaxPrice);
+            maxPrice = parseFloat(effectiveMaxPrice);
+            migrationPerformed = true;
+        }
+    }
+
+    // Markiere Migration als abgeschlossen nur wenn tatsächlich Daten migriert wurden
+    if (migrationPerformed) {
+        GM_setValue('migrationComplete', true);
+    }
+}
+
+// Speicherfunktionen
+function saveHiddenDeals() {
+    GM_setValue('hiddenDeals', hiddenDeals);
+    localStorage.setItem('hiddenDeals', JSON.stringify(hiddenDeals));
+}
+
+function saveExcludeWords(words) {
+    // Normalisiere Groß-/Kleinschreibung und entferne Duplikate
+    const normalizedWords = words.reduce((acc, word) => {
+        const lowerWord = word.toLowerCase();
+        const exists = acc.some(w => w.toLowerCase() === lowerWord);
+        if (!exists) {
+            acc.push(word); // Behält originale Schreibweise bei
+        }
+        return acc;
+    }, []);
+
+    // Speichere nur die normalisierte Version
+    GM_setValue('excludeWords', normalizedWords);
+    localStorage.setItem('excludeWords', JSON.stringify(normalizedWords));
+}
+
+function loadExcludeWords() {
+    // Load from GM storage
+    const gmWords = GM_getValue('excludeWords', []);
+
+    // Load from localStorage
+    let lsWords = [];
+    try {
+        lsWords = JSON.parse(localStorage.getItem('excludeWords') || '[]');
+    } catch (e) {
+    }
+
+    // Show final result
+    const result = gmWords.length > 0 ? gmWords : lsWords;
+
+    return result;
+}
+
+function saveExcludeMerchants(merchantsData) {
+    const validMerchants = merchantsData.filter(m =>
+        m && typeof m.id !== 'undefined' && m.id !== null &&
+        typeof m.name !== 'undefined' && m.name !== null
+    );
+    const ids = validMerchants.map(m => m.id);
+
+    GM_setValue('excludeMerchantIDs', ids);
+    GM_setValue('excludeMerchantsData', validMerchants);
+    localStorage.setItem('excludeMerchantsData', JSON.stringify(validMerchants));
+
+    excludeMerchantIDs = ids;
+}
+
+function loadExcludeMerchants() {
+    const merchantsData = GM_getValue('excludeMerchantsData', []);
+    const legacyIds = GM_getValue('excludeMerchantIDs', []);
+
+    // Filter out invalid entries
+    const validMerchants = merchantsData.filter(m =>
+                                                m &&
+                                                typeof m.id !== 'undefined' &&
+                                                m.id !== null &&
+                                                typeof m.name !== 'undefined' &&
+                                                m.name !== null
+                                               );
+
+    // Convert legacy IDs if needed
+    if (validMerchants.length === 0 && legacyIds.length > 0) {
+        return legacyIds
+            .filter(id => id && typeof id !== 'undefined')
+            .map(id => ({ id, name: id }));
+    }
+
+    return validMerchants;
+}
+
+function saveMaxPrice(price) {
+
+    GM_setValue('maxPrice', price.toString());
+    localStorage.setItem('maxPrice', price.toString());
+    maxPrice = price;
+}
+
+// --- 4. Kernfunktionen ---
+// Artikel verarbeiten und filtern
+function processArticles() {
+    // Cache für bereits verarbeitete Artikel
+    const processedDeals = new Set();
+
+    const deals = document.querySelectorAll('article.thread--deal, article.thread--voucher');
+    deals.forEach(deal => {
+        const dealId = deal.getAttribute('id');
+
+        // Skip wenn bereits verarbeitet
+        if (processedDeals.has(dealId)) return;
+        processedDeals.add(dealId);
+
+        if (hiddenDeals.includes(dealId)) {
+            hideDeal(deal);
+            return;
+        }
+
+        if (shouldExcludeArticle(deal)) {
+            hideDeal(deal);
+            return;
+        }
+
+        deal.style.display = 'block';
+        deal.style.opacity = '1';
+    });
+}
+
+// Ausschlussprüfung für Artikel
+function shouldExcludeArticle(article) {
+    const titleElement = article.querySelector('.thread-title');
+    if (!titleElement) return false;
+
+    // 2. Quick checks (temperature & price)
+    // Temperature check
+    if (hideColdDeals) {
+        const tempElement = article.querySelector('.cept-vote-temp .overflow--wrap-off');
+        if (tempElement) {
+            const temp = parseInt(tempElement.textContent);
+            if (!isNaN(temp) && temp < 0) return true;
+        }
+    }
+
+    // Price check
+    if (maxPrice > 0) {
+        const priceSelectors = ['.threadItemCard-price', '.thread-price', '[class*="price"]', '.cept-tp'];
+
+        for (const selector of priceSelectors) {
+            const priceElement = article.querySelector(selector);
+            if (!priceElement) continue;
+
+            try {
+                const priceText = priceElement.textContent.trim();
+                const priceMatch = priceText.match(/([\d.,]+)\s*€/);
+
+                if (priceMatch) {
+                    const price = parseFloat(priceMatch[1].replace('.', '').replace(',', '.'));
+                    if (!isNaN(price) && price > maxPrice) return true;
+                }
+            } catch (error) {
+                continue;
+            }
+        }
+    }
+
+    // 3. Complex checks
+    // Get title text
+    const rawTitle = titleElement.querySelector('a')?.getAttribute('title') || titleElement.innerText;
+    const processedTitle = rawTitle.toLowerCase();
+
+    // Check excludeWords
+    if (excludeWords.some(word => {
+        const searchTerm = word.toLowerCase();
+
+        // Handle words in brackets like [CB]
+        if (searchTerm.startsWith('[') && searchTerm.endsWith(']')) {
+            return processedTitle.includes(searchTerm);
+        }
+
+        // Handle words with special characters (+)
+        if (searchTerm.includes('+')) {
+            return processedTitle.includes(searchTerm);
+        }
+
+        // Handle multi-word phrases (like "eau de toilette" or "internet radio")
+        if (searchTerm.includes(' ') || searchTerm.includes('-')) {
+            const variations = [
+                searchTerm,                              // original form
+                searchTerm.replace(/-/g, ' '),          // hyphen to space
+                searchTerm.replace(/-/g, ''),           // without hyphen
+                searchTerm.replace(/ /g, ''),           // without spaces
+                searchTerm.replace(/-/g, ' ').trim(),   // normalized spaces
+                searchTerm.replace(/ /g, '-')           // space to hyphen
+            ];
+
+            // Remove duplicates
+            const uniqueVariations = [...new Set(variations)];
+
+            return uniqueVariations.some(variant => {
+                // For multi-word variations, all words must be present in order
+                if (variant.includes(' ')) {
+                    const words = variant.split(' ').filter(w => w.length > 0);
+                    let lastIndex = -1;
+
+                    return words.every(word => {
+                        const index = processedTitle.indexOf(word, lastIndex + 1);
+                        if (index === -1) return false;
+                        lastIndex = index;
+                        return true;
+                    });
+                }
+
+                // For single words or compound words
+                return processedTitle.includes(variant);
+            });
+        }
+
+        // Use word boundaries for normal words
+        const regex = new RegExp(`\\b${searchTerm}\\b`, 'i');
+        return regex.test(processedTitle);
+    })) return true;
+
+    // Merchant check
+    const merchantLink = article.querySelector('a[href*="merchant-id="]');
+    if (merchantLink) {
+        const merchantIDMatch = merchantLink.getAttribute('href').match(/merchant-id=(\d+)/);
+        if (merchantIDMatch && excludeMerchantIDs.includes(merchantIDMatch[1])) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function hideDeal(deal) {
+    deal.style.display = 'none';
+}
+
+function getWordsFromTitle(deal) {
+    const titleElement = deal.querySelector('.thread-title');
+    if (!titleElement) return [];
+
+    const rawTitle = titleElement.querySelector('a')?.getAttribute('title') || titleElement.innerText || '';
+
+    const keepWords = ['von', 'der', 'die', 'das', 'bei', 'mit', 'und', 'oder', 'auf', 'für', 'durch', 'bis', 'ab'];
+    const ignoreWords = ['Euro', 'EUR', 'VSK', '€', 'VGP', 'cent', 'Cent'];
+    const ignoreChars = ['&', '+', '!', '-', '/', '%', '–'];
+    const units = ['MB/s', 'GB/s', 'KB/s', 'Mbit/s', 'Gbit/s', 'Kbit/s'];
+    const priceContextWords = ['effektiv'];
+
+    const isDate = (word) => {
+        return /^\d{1,2}[.,]\d{1,2}(?:[.,]\d{2,4})?$/.test(word);
+    };
+
+    const isPriceContext = (word) => {
+        if (!priceContextWords.includes(word.toLowerCase())) return false;
+        // Prüfe ob im Titel ein Preis vorkommt
+        const hasPricePattern = /\d+(?:[.,]\d{2})?(?:€|EUR|Euro)/i;
+        return hasPricePattern.test(rawTitle);
+    };
+
+    const isPrice = (word) => {
+        return /^~?\d+(?:[.,]\d{2})?(?:€|EUR)?$/.test(word) || 
+               /^\d+(?:[.,]\d{2})?(?:\s*cent|\s*Cent)$/i.test(word);
+    };
+
+    const isPercentage = (word) => {
+        return /^\d+\s*%?$/.test(word) && rawTitle.includes('%');
+    };
+
+    const cleanWord = (word) => {
+        // Prüfe erst auf bekannte Einheiten
+        if (units.some(unit => word.includes(unit))) {
+            // Entferne nur Sonderzeichen am Ende die nicht zur Einheit gehören
+            const cleanedWord = word.trim();
+            return cleanedWord.replace(/[,;:!?.]+$/, '');
+        }
+        
+        return word
+            .trim()
+            .replace(/^[^a-zA-Z0-9äöüÄÖÜß]+|[^a-zA-Z0-9äöüÄÖÜß]+$/g, '')
+            .replace(/^[&+!%–]+$/, '')
+            .replace(/[-,]+$/, '');
+    };
+
+    const shouldKeepWord = (word) => {
+        const lowerWord = word.toLowerCase();
+        
+        if (!word || word.length === 0) return false;
+        if (ignoreChars.includes(word)) return false;
+        if (ignoreWords.some(ignore => ignore.toLowerCase() === lowerWord)) return false;
+        if (isDate(word)) return false;
+        if (isPrice(word)) return false;
+        if (isPercentage(word)) return false;
+        if (isPriceContext(word)) return false;
+
+        // Behalte spezielle Wörter
+        if (keepWords.includes(lowerWord)) return true;
+        if (units.some(unit => word === unit)) return true;
+
+        return true;
+    };
+
+    const splitTitle = (title) => {
+        // Temporär Einheiten ersetzen
+        let tempTitle = title;
+        const replacements = new Map();
+        
+        units.forEach((unit, index) => {
+            const placeholder = `__UNIT${index}__`;
+            while (tempTitle.includes(unit)) {
+                tempTitle = tempTitle.replace(unit, placeholder);
+                replacements.set(placeholder, unit);
+            }
+        });
+
+        // Split und Einheiten wiederherstellen
+        return tempTitle
+            .split(/[\s\/]+/)
+            .map(word => {
+                replacements.forEach((unit, placeholder) => {
+                    if (word.includes(placeholder)) {
+                        word = word.replace(placeholder, unit);
+                    }
+                });
+                return word;
+            });
+    };
+
+    return splitTitle(rawTitle)
+        .map(cleanWord)
+        .filter(shouldKeepWord)
+        .filter((word, index, self) => self.indexOf(word) === index);
+}
+
+// --- 5. Benutzeroberfläche (UI) ---
+function setupScrollHandling() {
+    let isScrollingUI = false;
+    let lastActiveUI = null;
+    let touchStartY = 0;
+
+    function handleMouseEnter(e) {
+        const targetUI = e.currentTarget;
+        if (targetUI) {
+            lastActiveUI = targetUI;
+        }
+    }
+
+    function handleMouseLeave() {
+        lastActiveUI = null;
+    }
+
+    function handleScroll(e) {
+        // Check if scrolling happens in a scrollable list
+        const scrollableElement = e.target.closest('#merchantList, #wordsList, #wordSuggestionList');
+        
+        if (scrollableElement) {
+            // Allow scrolling within scrollable lists
+            const isAtTop = scrollableElement.scrollTop === 0;
+            const isAtBottom = scrollableElement.scrollTop + scrollableElement.clientHeight >= scrollableElement.scrollHeight;
+    
+            // Only prevent scrolling at top/bottom of list
+            if ((isAtTop && e.deltaY < 0) || (isAtBottom && e.deltaY > 0)) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            return; // Exit early for scrollable elements
+        }
+    
+        if (IS_TOUCH_DEVICE) {
+            if (isScrollingUI) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            return;
+        }
+    
+        // Desktop handling
+        if (lastActiveUI) {
+            const rect = lastActiveUI.getBoundingClientRect();
+            const mouseIsOverUI = e.clientX >= rect.left &&
+                                e.clientX <= rect.right &&
+                                e.clientY >= rect.top &&
+                                e.clientY <= rect.bottom;
+    
+            if (mouseIsOverUI && !e.target.closest('#merchantList, #wordsList, #wordSuggestionList')) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }
+    }
+
+    function handleTouchStart(e) {
+        const touch = e.touches[0];
+        touchStartY = touch.clientY;
+
+        const uiElements = [settingsDiv, merchantListDiv, wordsListDiv, document.getElementById('wordSuggestionList')];
+
+        isScrollingUI = uiElements.some(el => {
+            if (!el?.parentNode) return false;
+            const rect = el.getBoundingClientRect();
+            return touch.clientX >= rect.left &&
+                   touch.clientX <= rect.right &&
+                   touch.clientY >= rect.top &&
+                   touch.clientY <= rect.bottom;
+        });
+    }
+
+    function handleTouchMove(e) {
+        if (!isScrollingUI) return;
+
+        const touch = e.touches[0];
+        const scrollableElement = e.target.closest('#merchantList, #wordsList');
+
+        if (scrollableElement) {
+            const deltaY = touchStartY - touch.clientY;
+            const isAtTop = scrollableElement.scrollTop === 0;
+            const isAtBottom = scrollableElement.scrollTop + scrollableElement.clientHeight >= scrollableElement.scrollHeight;
+
+            // Erlaube Scrollen in der Liste wenn nicht am Anfang/Ende
+            if ((isAtTop && deltaY < 0) || (isAtBottom && deltaY > 0)) {
+                e.preventDefault();
+            }
+        } else {
+            // Blockiere Scrollen außerhalb der Listen
+            e.preventDefault();
+        }
+
+        touchStartY = touch.clientY;
+    }
+
+    function setupUIElement(element) {
+        if (!element?.parentNode) return;
+
+        element.addEventListener('mouseenter', handleMouseEnter);
+        element.addEventListener('mouseleave', handleMouseLeave);
+    }
+
+    function setupAllElements() {
+        // Füge wordSuggestionList zu den zu überwachenden Elementen hinzu
+        [settingsDiv, merchantListDiv, wordsListDiv, document.getElementById('wordSuggestionList')]
+            .forEach(setupUIElement);
+    }
+
+    // Initial Setup
+    setupAllElements();
+
+    // Event Listener
+    if (IS_TOUCH_DEVICE) {
+        document.addEventListener('touchstart', handleTouchStart, { passive: true });
+        document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    }
+
+    document.addEventListener('wheel', handleScroll, { passive: false });
+
+    // MutationObserver für dynamisch hinzugefügte UIs
+    const observer = new MutationObserver(setupAllElements);
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
+    // Cleanup-Funktion
+    return () => {
+        if (IS_TOUCH_DEVICE) {
+            document.removeEventListener('touchstart', handleTouchStart);
+            document.removeEventListener('touchmove', handleTouchMove);
+        }
+        document.removeEventListener('wheel', handleScroll);
+        [settingsDiv, merchantListDiv, wordsListDiv, document.getElementById('wordSuggestionList')]
+            .forEach(el => {
+                if (el?.parentNode) {
+                    el.removeEventListener('mouseenter', handleMouseEnter);
+                    el.removeEventListener('mouseleave', handleMouseLeave);
+                }
+            });
+        observer.disconnect();
+    };
+}
+
+// UI-Basis
+function initUIContainers() {
+    settingsDiv = document.createElement('div');
+    merchantListDiv = document.createElement('div');
+    wordsListDiv = document.createElement('div');
+}
+
+// Einstellungsfenster erstellen
+function createSettingsUI() {
+    if (isSettingsOpen) return;
+    isSettingsOpen = true;
+
+    // Initialize containers
+    initUIContainers();
+
+    const colors = getThemeColors();
+
+    // Get merchant info from current deal
+    let merchantName = null;
+    let showMerchantButton = false;
+
+    settingsDiv.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: 15px;
+        background: ${colors.background};
+        border: 1px solid ${colors.border};
+        border-radius: 5px;
+        z-index: 1000;
+        width: 300px;
+        max-height: 90vh;
+        overflow: visible;
+        color: ${colors.text};
+    `;
+
+    if (dealThatOpenedSettings) {
+        const merchantLink = dealThatOpenedSettings.querySelector('a[data-t="merchantLink"]');
+        if (merchantLink) {
+            merchantName = merchantLink.textContent.trim();
+            showMerchantButton = true;
+        }
+    }
+
+    // Process articles when opening settings
+    processArticles();
+
+    // Conditional merchant button HTML - only show if merchant exists
+    const merchantButtonHtml = showMerchantButton ? `
+        <button id="hideMerchantButton" style="
+            width: 100%;
+            margin-top: 5px;
+            padding: 5px 10px;
+            background: ${colors.buttonBg};
+            border: 1px solid ${colors.buttonBorder};
+            border-radius: 3px;
+            cursor: pointer;
+            color: ${colors.text};
+        ">
+            <i class="fas fa-store-slash"></i> Alle Deals von <span style="font-weight: bold">${merchantName}</span> ausblenden
+        </button>
+    ` : '';
+
+    const wordInputSection = `
+        <div style="margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; gap: 4px;">
+                <input id="newWordInput"
+                    autocomplete="off"
+                    ${IS_TOUCH_DEVICE ? 'readonly' : ''}
+                    placeholder="Neues Wort..."
+                    title="Deals mit hier eingetragenen Wörtern im Titel werden ausgeblendet."
+                    style="
+                        flex: 1;
+                        min-width: 0;
+                        padding: 8px;
+                        background: ${colors.inputBg};
+                        border: 1px solid ${colors.border};
+                        border-radius: 3px;
+                        color: ${colors.text};
+                    ">
+                ${IS_TOUCH_DEVICE ? `
+                    <button id="enableKeyboardButton"
+                        style="
+                            flex-shrink: 0;
+                            width: 36px;
+                            padding: 8px;
+                            background: ${colors.buttonBg};
+                            border: 1px solid ${colors.buttonBorder};
+                            border-radius: 3px;
+                            cursor: pointer;
+                            color: ${colors.text};
+                        ">
+                        <i class="fas fa-keyboard"></i>
+                    </button>
+                ` : ''}
+                <button id="addWordButton"
+                    style="
+                        flex-shrink: 0;
+                        width: 36px;
+                        padding: 8px;
+                        background: ${colors.buttonBg};
+                        border: 1px solid ${colors.buttonBorder};
+                        border-radius: 3px;
+                        cursor: pointer;
+                        color: ${colors.text};
+                    ">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
+        </div>`;
+
+    settingsDiv.innerHTML = `
+        <h4 style="margin-bottom: 15px; color: ${colors.text}">Einstellungen zum Ausblenden</h4>
+        ${wordInputSection}
+        ${merchantButtonHtml}
+
+        <!-- List Management Section -->
+        <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
+            <button id="showWordsListButton" style="
+                width: 100%;
+                padding: 8px;
+                background: ${colors.buttonBg};
+                border: 1px solid ${colors.buttonBorder};
+                border-radius: 3px;
+                cursor: pointer;
+                color: ${colors.text};">
+                <i class="fas fa-list"></i> Wortfilter verwalten
+            </button>
+            <button id="showMerchantListButton" style="
+                width: 100%;
+                padding: 8px;
+                background: ${colors.buttonBg};
+                border: 1px solid ${colors.buttonBorder};
+                border-radius: 3px;
+                cursor: pointer;
+                color: ${colors.text};">
+                <i class="fas fa-store"></i> Händlerfilter verwalten
+            </button>
+        </div>
+
+        <!-- Action Buttons -->
+        <div style="margin-top: 20px; text-align: right; display: flex; justify-content: flex-end; gap: 5px;">
+            <button id="createBackupButton" style="padding: 8px; background: none; border: none; cursor: pointer; color: ${colors.text};" title="Backup erstellen">
+                <i class="fas fa-file-export"></i>
+            </button>
+            <button id="restoreBackupButton" style="padding: 8px; background: none; border: none; cursor: pointer; color: ${colors.text};" title="Wiederherstellen">
+                <i class="fas fa-file-import"></i>
+            </button>
+            <input type="file" id="restoreFileInput" style="display: none;" />
+            <button id="closeSettingsButton" style="padding: 8px; background: none; border: none; cursor: pointer; color: ${colors.text};" title="Schließen">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>`;
+
+    // Explicitly add to DOM
+    document.body.appendChild(settingsDiv);
+
+    if (IS_TOUCH_DEVICE) {
+        const input = document.getElementById('newWordInput');
+        const keyboardButton = document.getElementById('enableKeyboardButton');
+
+        if (input && keyboardButton) {
+            let keyboardEnabled = false;
+            let ignoreNextFocus = false;
+
+            // Focus handler für Input
+            input.addEventListener('focus', (e) => {
+                if (ignoreNextFocus) {
+                    ignoreNextFocus = false;
+                    return;
+                }
+
+                if (!keyboardEnabled) {
+                    // Verhindern dass die Tastatur erscheint wenn nicht explizit aktiviert
+                    e.preventDefault();
+                    input.blur();
+
+                    // Zeige Wortvorschläge
+                    if (suggestedWords.length === 0) {
+                        suggestedWords = getWordsFromTitle(dealThatOpenedSettings);
+                    }
+                    if (suggestedWords.length > 0) {
+                        updateSuggestionList();
+                    }
+                }
+            });
+
+            // Keyboard Button Handler
+            keyboardButton.addEventListener('click', () => {
+                const input = document.getElementById('newWordInput');
+                if (!input) return;
+
+                // Entferne readonly und aktiviere Tastatur
+                input.removeAttribute('readonly');
+                keyboardEnabled = true;
+
+                // Verstecke Wortvorschläge
+                const suggestionList = document.getElementById('wordSuggestionList');
+                if (suggestionList) {
+                    suggestionList.remove();
+                }
+
+                // Verhindern dass der nächste Focus die Wortvorschläge öffnet
+                ignoreNextFocus = true;
+
+                // Fokussiere Input und öffne Tastatur
+                input.focus();
+
+                // Setze einen Timer um keyboardEnabled zurückzusetzen
+                setTimeout(() => {
+                    keyboardEnabled = false;
+                }, 100);
+            });
+        }
+    }
+
+    setupClickOutsideHandler();
+    updateUITheme();
+
+    const actionButtons = settingsDiv.querySelectorAll('#closeSettingsButton, #createBackupButton, #restoreBackupButton');
+    actionButtons.forEach(btn => {
+        btn.style.cssText = `
+            padding: 8px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: ${colors.text};
+        `;
+    });
+
+    // Add word input handler
+    const addWordButton = document.getElementById('addWordButton');
+    if (addWordButton) {
+        addWordButton.addEventListener('click', () => {
+            const newWordInput = document.getElementById('newWordInput');
+            const newWord = newWordInput.value.trim();
+
+            // Lade aktuelle Wörter neu um sicherzustellen dass wir die komplette Liste haben
+            excludeWords = loadExcludeWords();
+
+            // Prüfe ob das Wort (unabhängig von Groß-/Kleinschreibung) bereits existiert
+            const wordExists = excludeWords.some(word => word.toLowerCase() === newWord.toLowerCase());
+
+            if (newWord && !wordExists) {
+                excludeWords.unshift(newWord); // Füge neues Wort zur bestehenden Liste hinzu
+                saveExcludeWords(excludeWords);
+                newWordInput.value = '';
+                processArticles();
+                cleanup();
+
+                suggestedWords = [];
+                const suggestionList = document.getElementById('wordSuggestionList');
+                if (suggestionList) {
+                    suggestionList.remove();
+                }
+            } else if (wordExists) {
+                // Erstelle und zeige Fehlermeldung
+                const errorMsg = document.createElement('div');
+                errorMsg.style.cssText = `
+                    position: absolute;
+                    top: 100%;
+                    left: 0;
+                    right: 0;
+                    padding: 8px;
+                    margin-top: 4px;
+                    background: #ffebee;
+                    color: #c62828;
+                    border: 1px solid #ef9a9a;
+                    border-radius: 3px;
+                    font-size: 12px;
+                    z-index: 1003;
+                `;
+                errorMsg.textContent = `"${newWord}" ist bereits in der Liste vorhanden.`;
+
+                // Füge Fehlermeldung zum Input-Container hinzu
+                const inputContainer = newWordInput.parentElement;
+                inputContainer.style.position = 'relative';
+                inputContainer.appendChild(errorMsg);
+
+                // Entferne Fehlermeldung nach 3 Sekunden
+                setTimeout(() => {
+                    errorMsg.remove();
+                }, 3000);
+
+                // Selektiere den Text im Input für einfaches Überschreiben
+                newWordInput.select();
+            }
+        });
+    }
+
+    // Add enter key handler for input
+    document.getElementById('newWordInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            document.getElementById('addWordButton').click();
+        }
+    });
+
+    // Only add merchant button listener if button exists
+    const hideMerchantButton = document.getElementById('hideMerchantButton');
+    if (hideMerchantButton && showMerchantButton) {
+        hideMerchantButton.addEventListener('click', () => {
+            if (!dealThatOpenedSettings) return;
+
+            const merchantLink = dealThatOpenedSettings.querySelector('a[href*="merchant-id="]');
+            if (!merchantLink) return;
+
+            const merchantIDMatch = merchantLink.getAttribute('href').match(/merchant-id=(\d+)/);
+            if (!merchantIDMatch) return;
+
+            const merchantID = merchantIDMatch[1];
+            const merchantName = dealThatOpenedSettings.querySelector('a[data-t="merchantLink"]').textContent.trim();
+
+            const merchantsData = loadExcludeMerchants();
+            if (!merchantsData.some(m => m.id === merchantID)) {
+                merchantsData.unshift({ id: merchantID, name: merchantName });
+                saveExcludeMerchants(merchantsData);
+                processArticles();
+                cleanup(); // Close settings UI
+
+                // Aktualisiere Listen wenn UI offen
+                if (activeSubUI === 'merchant') {
+                    updateActiveLists();
+                }
+            }
+        });
+    }
+
+    // Add merchant list button listener
+    document.getElementById('showMerchantListButton').addEventListener('click', () => {
+        const btn = document.getElementById('showMerchantListButton');
+
+        if (btn.hasAttribute('data-processing')) return;
+
+        btn.setAttribute('data-processing', 'true');
+
+        if (activeSubUI === 'merchant') {
+            closeActiveSubUI();
+            btn.innerHTML = '<i class="fas fa-store"></i> Händlerfilter verwalten';
+            activeSubUI = null;
+        } else {
+            closeActiveSubUI();
+            createMerchantListUI();
+            activeSubUI = 'merchant';
+            btn.innerHTML = '<i class="fas fa-times"></i> Händlerfilter ausblenden';
+        }
+
+        btn.removeAttribute('data-processing');
+    });
+
+    // Add words list button listener
+    document.getElementById('showWordsListButton').addEventListener('click', () => {
+        const btn = document.getElementById('showWordsListButton');
+
+        if (activeSubUI === 'words') {
+            closeActiveSubUI();
+            btn.innerHTML = '<i class="fas fa-list"></i> Wortfilter verwalten';
+            activeSubUI = null;
+        } else {
+            closeActiveSubUI();
+            createExcludeWordsUI();
+            activeSubUI = 'words';
+            btn.innerHTML = '<i class="fas fa-times"></i> Wortfilter ausblenden';
+        }
+    });
+
+    // Always ensure close button works
+    document.getElementById('closeSettingsButton').addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent event bubbling
+        cleanup();
+    });
+
+    // Backup/Restore Event Listeners
+    document.getElementById('createBackupButton').addEventListener('click', backupData);
+
+    document.getElementById('restoreBackupButton').addEventListener('click', () => {
+        document.getElementById('restoreFileInput').click();
+    });
+
+    document.getElementById('restoreFileInput').addEventListener('change', restoreData);
+
+    // Add event listeners only if newWordInput exists
+    const newWordInput = document.getElementById('newWordInput');
+    if (newWordInput) {
+        // Unified focus handler
+        newWordInput.addEventListener('focus', () => {
+            // Get fresh words from current deal if none exist
+            if (suggestedWords.length === 0) {
+                suggestedWords = getWordsFromTitle(dealThatOpenedSettings);
+            }
+
+            // Always show suggestion list if words exist
+            if (suggestedWords.length > 0) {
+                updateSuggestionList();
+            }
+        }, { once: false }); // Allow multiple focus events
+    }
+
+    // Click Outside Handler anpassen
+    createSuggestionClickHandler();
+
+    // Cleanup bei UI-Schließung
+    document.getElementById('closeSettingsButton').addEventListener('click', () => {
+        document.removeEventListener('click', suggestionClickHandler);
+    });
+
+    // Add cleanup to window unload
+    window.addEventListener('unload', cleanup);
+
+    const maxPriceInput = document.getElementById('maxPriceFilterInput'); // Note the correct ID
+    if (maxPriceInput) {
+        maxPriceInput.addEventListener('change', (e) => {
+            const price = parseFloat(e.target.value);
+            if (!isNaN(price) && price >= 0) {
+                saveMaxPrice(price);
+                processArticles();
+            }
+        });
+    }
+
+    // Get initial word suggestions
+    suggestedWords = dealThatOpenedSettings ? getWordsFromTitle(dealThatOpenedSettings) : [];
+
+    // Scroll-Handling einrichten
+    const cleanupScrollHandling = setupScrollHandling();
+
+    // Cleanup erweitern
+    const oldCleanup = cleanup;
+    cleanup = () => {
+        cleanupScrollHandling();
+        oldCleanup();
+    };
+}
+
+// Listen-Management
+// Händlerliste erstellen
+function createMerchantListUI() {
+    const colors = getThemeColors();
+    merchantListDiv.style.cssText = `
+        ${getSubUIPosition()}
+        padding: 15px;
+        background: ${colors.background};
+        border: 1px solid ${colors.border};
+        border-radius: 5px;
+        z-index: 1001;
+        width: 300px;
+        color: ${colors.text};
+    `;
+
+    const currentMerchants = loadExcludeMerchants();
+
+    const merchantListHTML = currentMerchants.map(merchant => `
+        <div class="merchant-item" style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+            padding: 5px;
+            background: ${colors.itemBg};
+            color: ${colors.text};
+            border: 1px solid ${colors.border};
+            border-radius: 3px;">
+            <span>${merchant.name}</span>
+            <button class="delete-merchant" data-id="${merchant.id}" style="
+                background: none;
+                border: none;
+                cursor: pointer;
+                color: ${colors.text};">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `).join('');
+
+    merchantListDiv.innerHTML = `
+        <h4 style="margin-bottom: 10px;">Ausgeblendete Händler (${currentMerchants.length})</h4>
+        <input type="text" id="merchantSearch" placeholder="Händler suchen..."
+            style="
+                width: 100%;
+                padding: 5px;
+                margin-bottom: 10px;
+                background: ${colors.inputBg};
+                border: 1px solid ${colors.border};
+                color: ${colors.text};
+                border-radius: 3px;">
+        <div style="margin-bottom: 15px;">
+            <div id="merchantList" style="
+                margin-bottom: 10px;
+                height: 200px;
+                overflow-y: auto;
+                padding-right: 5px;
+                min-height: 200px;">
+                ${merchantListHTML}
+            </div>
+            <button id="clearMerchantListButton" style="
+                width: 100%;
+                padding: 5px 10px;
+                background: ${colors.buttonBg};
+                border: 1px solid ${colors.buttonBorder};
+                color: ${colors.text};
+                border-radius: 3px;
+                cursor: pointer;
+                margin-top: 10px;">
+                <i class="fas fa-trash"></i> Alle Händler entfernen
+            </button>
+        </div>
+        <div style="text-align: right;">
+            <button id="closeMerchantListButton" style="padding: 8px 12px; background: none; border: none; cursor: pointer;" title="Schließen">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `;
+
+    // Add the div to the document body
+    document.body.appendChild(merchantListDiv);
+    setupClickOutsideHandler();
+
+    // Add search functionality
+    const searchInput = document.getElementById('merchantSearch');
+    searchInput.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        let visibleCount = 0;
+        // Hole aktuelle Händler statt die ursprüngliche Liste zu verwenden
+        const currentMerchants = loadExcludeMerchants();
+        const totalCount = currentMerchants.length;
+
+        document.querySelectorAll('.merchant-item').forEach(item => {
+            const merchantName = item.querySelector('span').textContent.toLowerCase();
+            const isVisible = merchantName.includes(searchTerm);
+            item.style.display = isVisible ? 'flex' : 'none';
+            if (isVisible) visibleCount++;
+        });
+
+        // Update heading counter
+        const heading = merchantListDiv.querySelector('h4');
+        if (heading) {
+            heading.textContent = searchTerm
+                ? `Ausgeblendete Händler (${visibleCount}/${totalCount})`
+                : `Ausgeblendete Händler (${totalCount})`;
+        }
+    });
+
+    // Alle Händler entfernen Button
+    document.getElementById('clearMerchantListButton').addEventListener('click', () => {
+        if (confirm('Möchten Sie wirklich alle Händler aus der Liste entfernen?')) {
+            saveExcludeMerchants([]);
+            document.getElementById('merchantList').innerHTML = '';
+            excludeMerchantIDs = [];
+            processArticles();
+
+            // Immediately update counter in heading
+            const heading = merchantListDiv.querySelector('h4');
+            if (heading) {
+                heading.textContent = 'Ausgeblendete Händler (0)';
+            }
+        }
+    });
+
+    document.querySelectorAll('.delete-merchant').forEach(button => {
+
+        button.addEventListener('click', function(e) {
+            handleMerchantDelete(e);
+        });
+    });
+
+    // Update close button handlers in createMerchantListUI
+    document.getElementById('closeMerchantListButton').addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent event bubbling
+        closeActiveSubUI();
+    });
+}
+
+// Wörterliste erstellen
+function createExcludeWordsUI() {
+    const colors = getThemeColors();
+    wordsListDiv.style.cssText = `
+        ${getSubUIPosition()}
+        padding: 15px;
+        background: ${colors.background};
+        border: 1px solid ${colors.border};
+        border-radius: 5px;
+        z-index: 1001;
+        width: 300px;
+        color: ${colors.text};
+    `;
+
+    const currentWords = loadExcludeWords();
+
+    const wordsListHTML = currentWords.map(word => `
+        <div class="word-item" style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+            padding: 5px;
+            background: ${colors.itemBg};
+            color: ${colors.text};
+            border: 1px solid ${colors.border};
+            border-radius: 3px;">
+            <span style="word-break: break-word;">${word}</span>
+            <button class="delete-word" data-word="${word}" style="
+                background: none;
+                border: none;
+                cursor: pointer;
+                color: ${colors.text};">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `).join('');
+
+    wordsListDiv.innerHTML = `
+        <h4 style="margin-bottom: 10px;">Ausgeblendete Wörter (${currentWords.length})</h4>
+        <input type="text" id="wordSearch" placeholder="Wörter suchen..."
+            style="
+                width: 100%;
+                padding: 5px;
+                margin-bottom: 10px;
+                background: ${colors.inputBg};
+                border: 1px solid ${colors.border};
+                color: ${colors.text};
+                border-radius: 3px;">
+        <div style="margin-bottom: 15px;">
+            <div id="wordsList" style="
+                margin-bottom: 10px;
+                height: 200px;
+                overflow-y: auto;
+                padding-right: 5px;
+                min-height: 200px;">
+                ${wordsListHTML}
+            </div>
+            <button id="clearWordsListButton" style="
+                width: 100%;
+                padding: 5px 10px;
+                background: ${colors.buttonBg};
+                border: 1px solid ${colors.buttonBorder};
+                color: ${colors.text};
+                border-radius: 3px;
+                cursor: pointer;
+                margin-top: 10px;">
+                <i class="fas fa-trash"></i> Alle Wörter entfernen
+            </button>
+        </div>
+        <div style="text-align: right;">
+            <button id="closeWordsListButton" style="padding: 8px 12px; background: none; border: none; cursor: pointer;" title="Schließen">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `;
+
+    // Add the div to the document body
+    document.body.appendChild(wordsListDiv);
+    setupClickOutsideHandler();
+
+    // Add search functionality
+    const searchInput = document.getElementById('wordSearch');
+    searchInput.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        let visibleCount = 0;
+        // Hole aktuelle Wörter statt die ursprüngliche Liste zu verwenden
+        const currentWords = loadExcludeWords();
+        const totalCount = currentWords.length;
+
+        document.querySelectorAll('.word-item').forEach(item => {
+            const word = item.querySelector('span').textContent.toLowerCase();
+            const isVisible = word.includes(searchTerm);
+            item.style.display = isVisible ? 'flex' : 'none';
+            if (isVisible) visibleCount++;
+        });
+
+        // Update heading counter
+        const heading = wordsListDiv.querySelector('h4');
+        if (heading) {
+            heading.textContent = searchTerm
+                ? `Ausgeblendete Wörter (${visibleCount}/${totalCount})`
+                : `Ausgeblendete Wörter (${totalCount})`;
+        }
+    });
+
+    // Alle Wörter entfernen Button
+    document.getElementById('clearWordsListButton').addEventListener('click', () => {
+        if (confirm('Möchten Sie wirklich alle Wörter aus der Liste entfernen?')) {
+            saveExcludeWords([]);
+            document.getElementById('wordsList').innerHTML = '';
+            excludeWords = [];
+            processArticles();
+
+            // Immediately update counter in heading
+            const heading = wordsListDiv.querySelector('h4');
+            if (heading) {
+                heading.textContent = 'Ausgeblendete Wörter (0)';
+            }
+        }
+    });
+
+    // Add delete handlers
+    document.querySelectorAll('.delete-word').forEach(button => {
+
+        button.addEventListener('click', function(e) {
+            handleWordDelete(e);
+        });
+    });
+
+    // Update close button handlers in createExcludeWordsUI
+    document.getElementById('closeWordsListButton').addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent event bubbling
+        closeActiveSubUI();
+    });
+}
+
+// Liste der Händler/Wörter aktualisieren
+function updateActiveLists() {
+    const colors = getThemeColors();
+
+    if (activeSubUI === 'merchant' && merchantListDiv) {
+        const merchantList = document.getElementById('merchantList');
+        if (merchantList) {
+            const currentMerchants = loadExcludeMerchants();
+            merchantList.innerHTML = currentMerchants.map(merchant => `
+                <div class="merchant-item" style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 5px;
+                    padding: 5px;
+                    background: ${colors.itemBg};
+                    color: ${colors.text};
+                    border: 1px solid ${colors.border};
+                    border-radius: 3px;">
+                    <div style="display: flex; flex-direction: column;">
+                        <span>${merchant.name}</span>
+                        <span style="color: ${colors.text}; opacity: 0.7; font-size: 0.8em;">ID: ${merchant.id}</span>
+                    </div>
+                    <button class="delete-merchant" data-id="${merchant.id}" style="
+                        background: none;
+                        border: none;
+                        cursor: pointer;
+                        color: ${colors.text};">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `).join('');
+
+            // Event Listener neu hinzufügen
+            document.querySelectorAll('.delete-merchant').forEach(button => {
+
+                button.addEventListener('click', function(e) {
+                    handleMerchantDelete(e);
+                });
+            });
+        }
+    } else if (activeSubUI === 'words' && wordsListDiv) {
+        const wordsList = document.getElementById('wordsList');
+        if (wordsList) {
+            const currentWords = loadExcludeWords();
+            wordsList.innerHTML = currentWords.map(word => `
+                <div class="word-item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 5px; background: #f0f0f0; border-radius: 3px;">
+                    <span style="word-break: break-word;">${word}</span>
+                    <button class="delete-word" data-word="${word}" style="background: none; border: none; cursor: pointer; color: #666;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `).join('');
+
+            // Event Listener neu hinzufügen
+            document.querySelectorAll('.delete-word').forEach(button => {
+                button.addEventListener('click', handleWordDelete);
+            });
+        }
+    }
+}
+
+// UI-Komponenten
+// Wort zur Liste hinzufügen
+function addWordToList(word, wordsList) {
+    const div = document.createElement('div');
+    div.className = 'word-item';
+    div.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 5px; background: #f0f0f0; border-radius: 3px;';
+    div.innerHTML = `
+        <span style="word-break: break-word;">${word}</span>
+        <button class="delete-word" data-word="${word}" style="background: none; border: none; cursor: pointer; color: #666;">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+
+    // Insert at beginning of list
+    wordsList.insertBefore(div, wordsList.firstChild);
+}
+
+// Händler zur Liste hinzufügen
+function addMerchantToList(merchant, merchantList) {
+    const div = document.createElement('div');
+    div.className = 'merchant-item';
+    div.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 5px; background: #f0f0f0; border-radius: 3px;';
+    div.innerHTML = `
+        <span style="font-weight: bold;">${merchant.name}</span>
+        <button class="delete-merchant" data-id="${merchant.id}" style="background: none; border: none; cursor: pointer; color: #666;">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+
+    // Insert at beginning of list
+    merchantList.insertBefore(div, merchantList.firstChild);
+}
+
+function updateSuggestionList() {
+    // Save scroll position if list exists
+    const oldList = document.getElementById('wordSuggestionList');
+    const scrollPosition = oldList?.scrollTop || 0;
+
+    // Remove old list if exists
+    if (oldList) oldList.remove();
+
+    // Filter and check for words
+    suggestedWords = suggestedWords.filter(word => !excludeWords.includes(word));
+    if (!suggestedWords.length) return;
+
+    const inputField = document.getElementById('newWordInput');
+    const inputRect = inputField.getBoundingClientRect();
+    const colors = getThemeColors();
+
+    // Create suggestion list with fixed positioning
+    const wordSuggestionList = document.createElement('div');
+    wordSuggestionList.id = 'wordSuggestionList';
+    wordSuggestionList.style.cssText = `
+        position: fixed;
+        top: ${inputRect.bottom}px;
+        left: ${inputRect.left}px;
+        width: ${inputRect.width}px;
+        max-height: 200px;
+        overflow-y: auto;
+        background: ${colors.background};
+        border: 1px solid ${colors.border};
+        color: ${colors.text};
+        border-radius: 3px;
+        z-index: 1002;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        display: block;
+    `;
+
+    // Add scroll event listener to update position
+    const updatePosition = () => {
+        const newRect = inputField.getBoundingClientRect();
+        wordSuggestionList.style.top = `${newRect.bottom}px`;
+        wordSuggestionList.style.left = `${newRect.left}px`;
+    };
+
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+
+    // Rest of the function stays the same
+    wordSuggestionList.innerHTML = suggestedWords
+        .map(word => `
+            <div class="word-suggestion-item" style="padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; transition: background-color 0.2s;">
+                ${word}
+            </div>
+        `).join('');
+
+    document.body.appendChild(wordSuggestionList);
+    wordSuggestionList.scrollTop = scrollPosition;
+
+    // Add event listeners for items
+    wordSuggestionList.querySelectorAll('.word-suggestion-item').forEach(item => {
+        item.addEventListener('mouseenter', () => {
+            item.style.backgroundColor = colors.itemBg;
+        });
+        item.addEventListener('mouseleave', () => {
+            item.style.backgroundColor = colors.background;
+        });
+        item.addEventListener('click', handleWordSelection);
+    });
+
+    // Clean up event listeners when list is removed
+    const cleanupListeners = () => {
+        window.removeEventListener('scroll', updatePosition, true);
+        window.removeEventListener('resize', updatePosition);
+    };
+
+    // Add to existing cleanup function
+    const oldCleanup = cleanup;
+    cleanup = () => {
+        cleanupListeners();
+        oldCleanup();
+    };
+}
+
+// UI-Styling
+function updateUITheme() {
+    const colors = getThemeColors();
+
+    [settingsDiv, merchantListDiv, wordsListDiv].forEach(div => {
+        if (div?.parentNode) {
+            div.style.background = colors.background;
+            div.style.border = `1px solid ${colors.border}`;
+            div.style.color = colors.text;
+
+            // Update all buttons and inputs
+            div.querySelectorAll('button:not([id*="close"])').forEach(btn => {
+                btn.style.background = colors.buttonBg;
+                btn.style.border = `1px solid ${colors.buttonBorder}`;
+                btn.style.color = colors.text;
+            });
+
+            div.querySelectorAll('input').forEach(input => {
+                input.style.background = colors.inputBg;
+                input.style.border = `1px solid ${colors.border}`;
+                input.style.color = colors.text;
+            });
+        }
+    });
+}
+
+// Update word/merchant item styles in list creation
+function updateItemStyles(item, colors) {
+    item.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 5px;
+        padding: 5px;
+        background: ${colors.itemBg};
+        color: ${colors.text};
+        border: 1px solid ${colors.border};
+        border-radius: 3px;
+    `;
+}
+
+// Update createMerchantListUI and createExcludeWordsUI
+function updateListStyles(listDiv, colors) {
+    // Apply styles to list items
+    listDiv.querySelectorAll('.merchant-item, .word-item').forEach(item => {
+        updateItemStyles(item, colors);
+    });
+
+    // Update search input
+    const searchInput = listDiv.querySelector('input[type="text"]');
+    if (searchInput) {
+        searchInput.style.cssText = `
+            width: 100%;
+            padding: 5px;
+            margin-bottom: 10px;
+            background: ${colors.inputBg};
+            border: 1px solid ${colors.border};
+            color: ${colors.text};
+            border-radius: 3px;
+        `;
+    }
+
+    // Update clear button
+    const clearButton = listDiv.querySelector('[id*="clear"]');
+    if (clearButton) {
+        clearButton.style.cssText = `
+            width: 100%;
+            padding: 5px 10px;
+            background: ${colors.buttonBg};
+            border: 1px solid ${colors.buttonBorder};
+            color: ${colors.text};
+            border-radius: 3px;
+            cursor: pointer;
+            margin-top: 10px;
+        `;
+    }
+}
+
+//
+function getSubUIPosition() {
+    if (IS_TOUCH_DEVICE) {
+        return `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        `;
+    }
+    return `
+        position: fixed;
+        top: 50%;
+        left: calc(50% + 310px);
+        transform: translate(-50%, -50%);
+    `;
+}
+
+// Aktive Sub-UIs schließen
+function closeActiveSubUI() {
+    if (activeSubUI === 'merchant') {
+        merchantListDiv?.remove();
+        const btn = document.getElementById('showMerchantListButton');
+        if (btn) {
+            btn.innerHTML = '<i class="fas fa-store"></i> Händlerfilter verwalten';
+            btn.removeAttribute('data-processing');
+        }
+    } else if (activeSubUI === 'words') {
+        wordsListDiv?.remove();
+        const btn = document.getElementById('showWordsListButton');
+        if (btn) {
+            btn.innerHTML = '<i class="fas fa-list"></i> Wortfilter verwalten';
+        }
+    }
+
+    activeSubUI = null;
+}
+
+// --- 6. Event Handler ---
+// Klick-Handler außerhalb der UI
+function setupClickOutsideHandler() {
+    if (uiClickOutsideHandler) {
+        document.removeEventListener('click', uiClickOutsideHandler);
+    }
+
+    uiClickOutsideHandler = (e) => {
+
+        // Early exit for clicks on UI controls
+        if (e.target.closest('.settings-button') ||
+            e.target.closest('#showMerchantListButton') ||
+            e.target.closest('#showWordsListButton')) {
+            return;
+        }
+
+        // Get current UI states
+        const settingsOpen = settingsDiv?.parentNode;
+        const merchantsOpen = merchantListDiv?.parentNode;
+        const wordsOpen = wordsListDiv?.parentNode;
+
+        // Check if click was outside all UIs
+        const clickedOutside = (!settingsOpen || !settingsDiv.contains(e.target)) &&
+              (!merchantsOpen || !merchantListDiv.contains(e.target)) &&
+              (!wordsOpen || !wordsListDiv.contains(e.target));
+
+        if (clickedOutside) {
+            cleanup();
+
+            // Explicit cleanup of UI elements
+            if (settingsDiv?.parentNode) settingsDiv.remove();
+            if (merchantListDiv?.parentNode) merchantListDiv.remove();
+            if (wordsListDiv?.parentNode) wordsListDiv.remove();
+
+            // Reset states
+            isSettingsOpen = false;
+            activeSubUI = null;
+
+            // Remove handler
+            document.removeEventListener('click', uiClickOutsideHandler);
+            uiClickOutsideHandler = null;
+        }
+    };
+
+    // Add with delay to prevent immediate trigger
+    setTimeout(() => {
+        document.addEventListener('click', uiClickOutsideHandler);
+    }, 100);
+}
+
+// Wort-Auswahl Handler
+function handleWordSelection(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const wordSuggestionList = document.getElementById('wordSuggestionList');
+    const scrollPosition = wordSuggestionList.scrollTop; // Save scroll position
+
+    const word = e.target.textContent.trim();
+    const newWordInput = document.getElementById('newWordInput');
+    const currentValue = newWordInput.value.trim();
+
+    newWordInput.value = currentValue ? `${currentValue} ${word}` : word;
+    suggestedWords = suggestedWords.filter(w => w !== word);
+
+    updateSuggestionList();
+    newWordInput.focus();
+
+    // Restore scroll position after list update
+    const updatedList = document.getElementById('wordSuggestionList');
+    if (updatedList) {
+        updatedList.scrollTop = scrollPosition;
+    }
+}
+
+// Händler-Löschung Handler
+function handleMerchantDelete(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const deleteButton = e.target.closest('.delete-merchant');
+    if (!deleteButton) return;
+
+    const idToDelete = deleteButton.dataset.id;
+    const merchantItem = deleteButton.closest('.merchant-item');
+
+    // Update merchants array
+    const merchantsData = loadExcludeMerchants();
+    const updatedMerchants = merchantsData.filter(m => m.id !== idToDelete);
+    saveExcludeMerchants(updatedMerchants);
+
+    // Get search state and counts
+    const searchInput = document.getElementById('merchantSearch');
+    const searchTerm = searchInput?.value.trim().toLowerCase();
+    const totalItems = document.querySelectorAll('.merchant-item').length;
+
+    // Calculate visible items for search
+    let visibleCount = 0;
+    if (searchTerm) {
+        const visibleItems = Array.from(document.querySelectorAll('.merchant-item')).filter(item => {
+            const merchantName = item.querySelector('span').textContent.toLowerCase();
+            const isVisible = merchantName.includes(searchTerm) &&
+                            item.querySelector('.delete-merchant').dataset.id !== idToDelete;
+            return isVisible;
+        });
+        visibleCount = visibleItems.length;
+    }
+
+    // Remove item and update UI
+    merchantItem.remove();
+    processArticles();
+
+    // Update counter in heading
+    const heading = merchantListDiv.querySelector('h4');
+    if (heading) {
+        const newTotal = totalItems - 1;
+        heading.textContent = searchTerm
+            ? `Ausgeblendete Händler (${visibleCount}/${newTotal})`
+            : `Ausgeblendete Händler (${newTotal})`;
+    }
+}
+
+function handleWordDelete(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const deleteButton = e.target.closest('.delete-word');
+    if (!deleteButton) return;
+
+    const wordToDelete = deleteButton.dataset.word;
+    const wordItem = deleteButton.closest('.word-item');
+
+    // Update excludeWords array
+    excludeWords = excludeWords.filter(word => word !== wordToDelete);
+    saveExcludeWords(excludeWords);
+
+    // Get search state and counts
+    const searchInput = document.getElementById('wordSearch');
+    const searchTerm = searchInput?.value.trim().toLowerCase();
+    const totalItems = document.querySelectorAll('.word-item').length;
+
+    // Calculate visible items for search
+    let visibleCount = 0;
+    if (searchTerm) {
+        const visibleItems = Array.from(document.querySelectorAll('.word-item')).filter(item => {
+            const itemWord = item.querySelector('span').textContent.toLowerCase();
+            const isVisible = itemWord.includes(searchTerm) && itemWord !== wordToDelete.toLowerCase();
+            return isVisible;
+        });
+        visibleCount = visibleItems.length;
+    }
+
+    // Remove item and update UI
+    wordItem.remove();
+    processArticles();
+
+    // Update counter in heading
+    const heading = wordsListDiv.querySelector('h4');
+    if (heading) {
+        const newTotal = totalItems - 1;
+        heading.textContent = searchTerm
+            ? `Ausgeblendete Wörter (${visibleCount}/${newTotal})`
+            : `Ausgeblendete Wörter (${newTotal})`;
+    }
+}
+
+// Add after other global functions
+function createSuggestionClickHandler() {
+    // Remove old handler if exists
+    if (suggestionClickHandler) {
+        document.removeEventListener('click', suggestionClickHandler);
+    }
+
+    suggestionClickHandler = (e) => {
+        const list = document.getElementById('wordSuggestionList');
+        const input = document.getElementById('newWordInput');
+
+        if (!list?.contains(e.target) && !input?.contains(e.target)) {
+            list?.remove();
+        }
+    };
+
+    document.addEventListener('click', suggestionClickHandler);
+    return suggestionClickHandler;
+}
+
+// --- 7. Button-Management ---
+// Button-Funktionen
+function addSettingsButton() {
+    const deals = document.querySelectorAll('article.thread--deal, article.thread--voucher');
+
+    deals.forEach(deal => {
+        if (deal.hasAttribute('data-settings-added')) return;
+
+        const footer = deal.querySelector('.threadListCard-footer, .threadCardLayout-footer');
+        if (!footer) return;
+
+        // Create settings button
+        const settingsBtn = document.createElement('button');
+        settingsBtn.className = 'flex--shrink-0 button button--type-text button--mode-secondary button--square';
+        settingsBtn.title = 'mydealz Manager Einstellungen';
+        settingsBtn.setAttribute('data-t', 'mdmSettings');
+        settingsBtn.style.cssText = `
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            padding: 6px !important;
+            border: none !important;
+            background: transparent !important;
+            cursor: pointer !important;
+            margin: 0 4px !important;
+            min-width: 32px !important;
+            min-height: 32px !important;
+            position: relative !important;
+            z-index: 2 !important;
+        `;
+
+        settingsBtn.innerHTML = `
+            <span class="flex--inline boxAlign-ai--all-c">
+                <svg width="20" height="20" class="icon icon--gear">
+                    <use xlink:href="/assets/img/ico_707ed.svg#gear"></use>
+                </svg>
+            </span>
+        `;
+
+        // Insert at correct position (before comments button)
+        const commentsBtn = footer.querySelector('[href*="comments"]');
+        if (commentsBtn) {
+            commentsBtn.parentNode.insertBefore(settingsBtn, commentsBtn);
+        } else {
+            footer.prepend(settingsBtn);
+        }
+
+        deal.setAttribute('data-settings-added', 'true');
+
+        settingsBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (isSettingsOpen) {
+                if (dealThatOpenedSettings === deal) {
+                    cleanup();
+                } else {
+                    // Komplett neues UI erstellen statt nur den Button zu aktualisieren
+                    cleanup();
+                    dealThatOpenedSettings = deal;
+                    createSettingsUI(); // Dies erstellt das UI in der korrekten Reihenfolge
+                }
+            } else {
+                dealThatOpenedSettings = deal;
+                createSettingsUI();
+            }
+            return false;
+        };
+    });
+}
+
+function addHideButtons() {
+    const deals = document.querySelectorAll('article:not([data-button-added])');
+
+    deals.forEach(deal => {
+        if (deal.hasAttribute('data-button-added')) return;
+
+        // Check for expired status
+        const isExpired = deal.querySelector('.color--text-TranslucentSecondary .size--all-s')?.textContent.includes('Abgelaufen');
+
+        // Get temperature container
+        const voteTemp = deal.querySelector('.cept-vote-temp');
+        if (!voteTemp) return;
+
+        // Remove popover
+        const popover = voteTemp.querySelector('.popover-origin');
+        if (popover) popover.remove();
+
+        // Find temperature span for expired deals
+        const tempSpan = isExpired ? voteTemp.querySelector('span') : null;
+        const targetElement = isExpired ? tempSpan : voteTemp;
+
+        if (!targetElement) return;
+
+        const hideButtonContainer = document.createElement('div');
+        hideButtonContainer.style.cssText = `
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            z-index: 10001;
+            pointer-events: none;
+        `;
+
+        const hideButton = document.createElement('button');
+        hideButton.innerHTML = '❌';
+        hideButton.className = 'vote-button overflow--visible custom-hide-button';
+        hideButton.title = 'Deal verbergen';
+        hideButton.style.cssText = `
+            position: absolute !important;
+            left: 50% !important;
+            top: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            z-index: 10002 !important;
+            background: ${isDarkMode() ? '#1d1f20' : '#ffffff'} !important;
+            border: 1px solid ${isDarkMode() ? 'rgb(107, 109, 109)' : 'rgba(3,12,25,0.23)'} !important;
+            border-radius: 50% !important;
+            cursor: pointer !important;
+            padding: 4px !important;
+            width: 28px !important;
+            height: 28px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            pointer-events: all !important;
+            box-shadow: none !important;
+            font-size: 12px !important;
+        `;
+
+        // Position relative to container
+        if (!targetElement.style.position) {
+            targetElement.style.position = 'relative';
+        }
+
+        if (IS_TOUCH_DEVICE) {
+            let buttonVisible = false;
+            const dealId = deal.getAttribute('id');
+
+            // Add scroll handler to hide button
+            const scrollHandler = () => {
+                if (buttonVisible) {
+                    buttonVisible = false;
+                    hideButtonContainer.style.display = 'none';
+                } else if (hideButtonContainer.style.display === 'block') {
+                }
+            };
+
+            // Add scroll listener
+            window.addEventListener('scroll', scrollHandler, { passive: true });
+
+            targetElement.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                if (!buttonVisible) {
+                    buttonVisible = true;
+                    hideButtonContainer.style.display = 'block';
+                } else {
+                    hiddenDeals.push(dealId);
+                    saveHiddenDeals();
+                    hideDeal(deal);
+                    window.removeEventListener('scroll', scrollHandler);
+                }
+            }, true);
+
+            targetElement.addEventListener('touchend', () => {
+                if (!buttonVisible) {
+                    hideButtonContainer.style.display = 'none';
+                }
+            }, true);
+        } else {
+            targetElement.addEventListener('mouseenter', () => {
+                hideButtonContainer.style.display = 'block';
+            }, true);
+
+            targetElement.addEventListener('mouseleave', () => {
+                hideButtonContainer.style.display = 'none';
+            }, true);
+
+            hideButton.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const dealId = deal.getAttribute('id');
+                hiddenDeals.push(dealId);
+                saveHiddenDeals();
+                hideDeal(deal);
+                return false;
+            };
+        }
+
+        hideButtonContainer.appendChild(hideButton);
+        targetElement.appendChild(hideButtonContainer);
+        deal.setAttribute('data-button-added', 'true');
+    });
+}
+
+function addMerchantPageHideButton() {
+    // Check if we're on a merchant page
+    const urlParams = new URLSearchParams(window.location.search);
+    const merchantId = urlParams.get('merchant-id');
+    const merchantBanner = document.querySelector(MERCHANT_PAGE_SELECTOR);
+    const merchantName = document.querySelector('.merchant-banner__title')?.textContent.trim();
+
+    if (!merchantId || !merchantBanner || !merchantName) return;
+
+    // Create hide button container
+    const hideButtonContainer = document.createElement('div');
+    hideButtonContainer.style.cssText = `
+        display: inline-flex;
+        align-items: center;
+        margin-left: 10px;
+    `;
+
+    // Create hide button
+    const hideButton = document.createElement('button');
+    hideButton.innerHTML = '<i class="fas fa-store-slash"></i>';
+    hideButton.title = `Alle Deals von ${merchantName} ausblenden`;
+    hideButton.style.cssText = `
+        padding: 8px;
+        background: #f0f0f0;
+        border: 1px solid #ccc;
+        border-radius: 3px;
+        cursor: pointer;
+    `;
+
+    // Add click handler
+    hideButton.addEventListener('click', () => {
+        const merchantsData = loadExcludeMerchants();
+
+        // Check if ID already exists
+        if (!merchantsData.some(m => m.id === merchantId)) {
+            // Add new merchant at start of array
+            merchantsData.unshift({ id: merchantId, name: merchantName });
+            saveExcludeMerchants(merchantsData);
+            processArticles();
+        }
+    });
+
+    // Add button to page
+    hideButtonContainer.appendChild(hideButton);
+    merchantBanner.appendChild(hideButtonContainer);
+}
+
+// --- 8. Filter-System ---
+// Filter-Funktionalität
+function injectMaxPriceFilter() {
+    const filterForm = document.querySelector('.subNavMenu-list form:first-of-type ul');
+    if (!filterForm) return;
+
+    // Get theme colors
+    const colors = getThemeColors();
+    const isDark = isDarkMode();
+
+    // Create list items for the filters
+    const filterItems = document.createElement('li');
+    filterItems.innerHTML = `
+        <!-- Cold Deals Toggle -->
+        <div class="flex boxAlign-jc--all-sb boxAlign-ai--all-c space--h-3 space--v-3 subNavMenu-item--separator">
+            <span class="subNavMenu-text mute--text space--r-2 overflow--wrap-off">Kalte Deals ausblenden</span>
+            <label class="checkbox checkbox--brand checkbox--mode-special">
+                <input
+                    class="input checkbox-input"
+                    type="checkbox"
+                    id="hideColdDealsToggle"
+                    ${hideColdDeals ? 'checked' : ''}
+                >
+                <span class="tGrid-cell tGrid-cell--shrink">
+                    <span class="checkbox-box flex--inline boxAlign-jc--all-c boxAlign-ai--all-c">
+                        <svg width="18px" height="14px" class="icon icon--tick checkbox-tick">
+                            <use xlink:href="/assets/img/ico_707ed.svg#tick"></use>
+                        </svg>
+                    </span>
+                </span>
+            </label>
+        </div>
+
+        <!-- Price Filter -->
+        <div class="flex boxAlign-jc--all-sb boxAlign-ai--all-c space--h-3 space--v-3">
+            <span class="subNavMenu-text mute--text space--r-2 overflow--wrap-off">
+                Maximalpreis filtern
+            </span>
+            <input
+                type="${IS_TOUCH_DEVICE ? 'number' : 'text'}"
+                inputmode="decimal"
+                pattern="[0-9]*[.,]?[0-9]*"
+                id="maxPriceFilterInput"
+                value="${maxPrice.toLocaleString('de-DE', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 2
+                })}"
+                placeholder="€"
+                style="
+                    width: 80px;
+                    padding: 4px 8px;
+                    border: 1px solid var(--border-color, ${isDarkMode() ? '#6b6d6d' : '#c5c7ca'});
+                    border-radius: 4px;
+                    margin-left: auto;
+                    text-align: right;
+                    background: ${isDark ? '#1d1f20' : colors.inputBg} !important;
+                    color: ${colors.text};
+                    font-size: 14px;
+                    line-height: 1.5;
+                "
+            >
+        </div>`;
+
+    // Insert at the beginning of the filter form
+    filterForm.appendChild(filterItems);
+
+    // Add event listeners
+    const coldDealsToggle = document.getElementById('hideColdDealsToggle');
+    if (coldDealsToggle) {
+        coldDealsToggle.addEventListener('change', (e) => {
+            hideColdDeals = e.target.checked;
+            GM_setValue('hideColdDeals', hideColdDeals);
+            localStorage.setItem(HIDE_COLD_DEALS_KEY, hideColdDeals);
+            processArticles();
+        });
+    }
+
+    const priceInput = document.getElementById('maxPriceFilterInput');
+    if (priceInput) {
+        const formatPrice = (value) => {
+            let cleaned = value.replace(/[^\d.,]/g, '');
+            const parts = cleaned.split(',');
+            if (parts.length > 2) {
+                cleaned = parts.slice(0, -1).join('') + ',' + parts.slice(-1);
+            }
+            if (parts.length === 2) {
+                const intPart = parts[0].replace(/\./g, '');
+                return Number(intPart).toLocaleString('de-DE') + ',' + parts[1];
+            } else {
+                const intPart = cleaned.replace(/\./g, '');
+                return Number(intPart).toLocaleString('de-DE');
+            }
+        };
+
+        // Prevent menu from closing on mobile keyboard open
+        if (IS_TOUCH_DEVICE) {
+            const subNavMenu = document.querySelector('.subNavMenu');
+
+            priceInput.addEventListener('focus', () => {
+                // Add a class to prevent auto-close
+                subNavMenu?.classList.add('keep-open');
+
+                // Select all text
+                priceInput.select();
+
+                // Prevent any existing scroll handlers from closing the menu
+                const preventClose = (e) => {
+                    if (document.activeElement === priceInput) {
+                        e.stopPropagation();
+                    }
+                };
+
+                // Capture phase to intercept before other handlers
+                window.addEventListener('scroll', preventClose, true);
+
+                // Cleanup on blur
+                const cleanup = () => {
+                    subNavMenu?.classList.remove('keep-open');
+                    window.removeEventListener('scroll', preventClose, true);
+                    priceInput.removeEventListener('blur', cleanup);
+                };
+
+                priceInput.addEventListener('blur', cleanup, { once: true });
+            });
+        } else {
+            // Desktop focus handler
+            priceInput.addEventListener('focus', () => {
+                priceInput.select();
+            });
+        }
+
+        priceInput.addEventListener('input', (e) => {
+            e.stopPropagation();
+            e.target.value = formatPrice(e.target.value);
+        });
+
+        priceInput.addEventListener('blur', (e) => {
+            const value = e.target.value;
+            const numStr = value.replace(/\./g, '').replace(',', '.');
+            const numericValue = parseFloat(numStr);
+
+            if (!isNaN(numericValue) && numericValue >= 0) {
+                saveMaxPrice(numericValue);
+                processArticles();
+            }
+        });
+    }
+}
+
+// --- 9. Backup und Wiederherstellung ---
+// Backup-Funktionen
+function backupData() {
+    try {
+        // Aktuelle Daten neu laden
+        const currentWords = loadExcludeWords();
+        const currentMerchants = loadExcludeMerchants();
+
+        // Backup mit aktuellen Daten erstellen
+        const backup = {
+            excludeWords: currentWords,
+            merchantsData: currentMerchants, // Nur merchantsData speichern
+            maxPrice: maxPrice,
+            hideColdDeals: hideColdDeals
+        };
+
+        const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        a.href = url;
+        a.download = `mydealz_backup_${timestamp}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+    } catch (error) {
+        alert('Fehler beim Erstellen des Backups: ' + error.message);
+    }
+}
+
+// Backup wiederherstellen
+function restoreData(event) {
+    const file = event.target.files[0];
+    if (!file || file.type !== 'application/json') {
+        alert('Bitte wählen Sie eine gültige JSON-Datei aus.');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const restoredData = JSON.parse(e.target.result);
+
+            // Lade aktuelle Daten
+            const currentWords = new Set(loadExcludeWords());
+            const currentMerchants = new Map(
+                loadExcludeMerchants().map(m => [m.id, m])
+            );
+
+            // Merge Wörter (Duplikate werden automatisch entfernt)
+            restoredData.excludeWords.forEach(word => currentWords.add(word));
+            const mergedWords = Array.from(currentWords);
+
+            // Merge Händler (bei gleicher ID behält der existierende Eintrag Vorrang)
+            restoredData.merchantsData.forEach(merchant => {
+                if (!currentMerchants.has(merchant.id)) {
+                    currentMerchants.set(merchant.id, merchant);
+                }
+            });
+            const mergedMerchants = Array.from(currentMerchants.values());
+
+            // Speichere zusammengeführte Daten
+            GM_setValue('excludeWords', mergedWords);
+            localStorage.setItem('excludeWords', JSON.stringify(mergedWords));
+            excludeWords = mergedWords;
+
+            saveExcludeMerchants(mergedMerchants);
+
+            // Behalte existierende Einstellungen wenn vorhanden
+            if (typeof restoredData.maxPrice === 'number' && maxPrice === 0) {
+                saveMaxPrice(restoredData.maxPrice);
+            }
+
+            if (typeof restoredData.hideColdDeals === 'boolean' && !hideColdDeals) {
+                hideColdDeals = restoredData.hideColdDeals;
+                GM_setValue('hideColdDeals', hideColdDeals);
+                localStorage.setItem('hideColdDeals', hideColdDeals);
+            }
+
+            if (isSettingsOpen) {
+                updateUITheme();
+            }
+            processArticles();
+
+            alert('Backup wurde erfolgreich wiederhergestellt.');
+
+        } catch (error) {
+            alert('Fehler beim Wiederherstellen des Backups: ' + error.message);
+        }
+    };
+
+    reader.readAsText(file);
+}
+
+// --- 10. Hilfsfunktionen ---
+// HTML dekodieren
+function decodeHtml(html) {
+    const txt = document.createElement('textarea');
+    txt.innerHTML = html;
+    return txt.value;
+}
+
+function cleanup() {
+    // Remove settings UI
+    if (settingsDiv?.parentNode) {
+        settingsDiv.remove();
+        isSettingsOpen = false;
+    }
+
+    // Add word suggestion list cleanup
+    const suggestionList = document.getElementById('wordSuggestionList');
+    if (suggestionList) {
+        suggestionList.remove();
+    }
+
+    // Close merchant & words lists
+    if (merchantListDiv?.parentNode) merchantListDiv.remove();
+    if (wordsListDiv?.parentNode) wordsListDiv.remove();
+
+    // Reset UI states
+    if (activeSubUI === 'merchant' || activeSubUI === 'words') {
+        const btn = document.getElementById(`show${activeSubUI === 'merchant' ? 'Merchant' : 'Words'}ListButton`);
+        if (btn) {
+            btn.innerHTML = activeSubUI === 'merchant' ?
+                '<i class="fas fa-store"></i> Händlerfilter verwalten' :
+            '<i class="fas fa-list"></i> Wortfilter verwalten';
+            btn.removeAttribute('data-processing');
+        }
+    }
+    activeSubUI = null;
+
+    // Clean up handlers
+    document.removeEventListener('click', suggestionClickHandler);
+    document.removeEventListener('click', uiClickOutsideHandler);
+    window.removeEventListener('unload', cleanup);
+    uiClickOutsideHandler = null;
+
+    // Reset suggestion state
+    suggestedWords = [];
+
+    // Don't disconnect the main observer
+    // Instead, reinitialize it to ensure it's working
+    initObserver();
+}
+
+function resetUIState() {
+    isSettingsOpen = false;
+    activeSubUI = null;
+    dealThatOpenedSettings = null;
+    suggestedWords = [];
+
+    settingsDiv?.remove();
+    merchantListDiv?.remove();
+    wordsListDiv?.remove();
+}
+
+// --- 11. Initialisierung ---
+// Startup
+function init() {
+    // Daten synchronisieren
+    syncStorage();
+    excludeWords = loadExcludeWords();
+
+    // UI initialisieren
+    initializeUI();
+
+    // Observer starten
+    initObserver();
+}
+
+function initializeUI() {
+    // Initial UI Setup
+    processArticles();
+    addSettingsButton();
+    addHideButtons();
+    addMerchantPageHideButton();
+
+    // Initialize filter observer
+    filterObserver.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
+    // Add filters if menu already exists
+    const filterMenu = document.querySelector('.subNavMenu-list');
+    if (filterMenu) {
+        injectMaxPriceFilter();
+    }
+}
+
+// Observer Initialisierung
+function initObserver() {
+    observer.disconnect();
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
+    // Sofortige Verarbeitung
+    requestAnimationFrame(() => {
+        processArticles();
+        addSettingsButton();
+        addHideButtons();
+    });
+}
+
+// Start script - nach DOM ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    init();
+}
+
+// Aufräumen bestehender Daten beim Skriptstart
+(function cleanupMerchantData() {
+    const merchants = loadExcludeMerchants();
+    saveExcludeMerchants(merchants);
+})();
