@@ -33,10 +33,10 @@
 
   ## 🌍 Mydealz in anderen Ländern
 
-[![Italien](https://flagcdn.com/24x18/it.png)](https://www.mydealz.it)  
-[![Spanien](https://flagcdn.com/24x18/es.png)](https://www.mydealz.es)  
-[![Frankreich](https://flagcdn.com/24x18/fr.png)](https://www.mydealz.fr)  
-[![UK](https://flagcdn.com/24x18/gb.png)](https://www.hotukdeals.com)  
-[![Polen](https://flagcdn.com/24x18/pl.png)](https://www.pepper.pl)  
-[![Schweden](https://flagcdn.com/24x18/se.png)](https://www.pepper.se)  
-[![Österreich](https://flagcdn.com/24x18/at.png)](https://www.preisjaeger.at)
+[![Italien](https://flagcdn.com/36x27/it.png)](https://www.mydealz.it)
+[![Spanien](https://flagcdn.com/36x27/es.png)](https://www.mydealz.es)
+[![Frankreich](https://flagcdn.com/36x27/fr.png)](https://www.mydealz.fr)
+[![UK](https://flagcdn.com/36x27/gb.png)](https://www.hotukdeals.com)
+[![Polen](https://flagcdn.com/36x27/pl.png)](https://www.pepper.pl)
+[![Schweden](https://flagcdn.com/36x27/se.png)](https://www.pepper.se)
+[![Österreich](https://flagcdn.com/36x27/at.png)](https://www.preisjaeger.at)
