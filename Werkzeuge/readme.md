@@ -9,15 +9,14 @@
 
 ## 📘 [README der anderen myDealz Projekte](https://github.com/9jS2PL5T/mydealz-Manager/tree/main/andere%20myDealz%20Projekte)   
 
-## 🌐 Mydealz in anderen Ländern  
-🇳🇱  [Niederlande](https://nl.pepper.com/)  
-🇪🇸  [Spanisch](https://www.chollometro.com/)  
-🇫🇷 [Französisch](https://www.dealabs.com/)  
-🇬🇧 [UK](https://www.hotukdeals.com/)  
-<img src="https://flagcdn.com/16x12/it.png" width="16" alt="IT"> Italien [Italy](https://www.pepper.it/)  
-🇵🇱 [Polen](https://www.pepper.pl/)  
-🇸🇪 [Schweden](https://www.pepperdeals.se/)  
-🇦🇹 [Österreich](https://www.preisjaeger.at/)  
+## 🌍 Mydealz in anderen Ländern
+[![Italien](https://flagcdn.com/36x27/it.png)](https://www.mydealz.it)        
+[![Spanien](https://flagcdn.com/36x27/es.png)](https://www.mydealz.es)        
+[![Frankreich](https://flagcdn.com/36x27/fr.png)](https://www.mydealz.fr)        
+[![UK](https://flagcdn.com/36x27/gb.png)](https://www.hotukdeals.com)        
+[![Polen](https://flagcdn.com/36x27/pl.png)](https://www.pepper.pl)        
+[![Schweden](https://flagcdn.com/36x27/se.png)](https://www.pepper.se)        
+[![Österreich](https://flagcdn.com/36x27/at.png)](https://www.preisjaeger.at)      
 
 ## 🧩 Regular Expression  
 🧠 [Regulex](https://jex.im/regulex/#!flags=&re=%5E(a%7Cb)*%3F%24)  
@@ -31,12 +30,4 @@
 
 
 
-  ## 🌍 Mydealz in anderen Ländern
-
-[![Italien](https://flagcdn.com/36x27/it.png)](https://www.mydealz.it)        
-[![Spanien](https://flagcdn.com/36x27/es.png)](https://www.mydealz.es)        
-[![Frankreich](https://flagcdn.com/36x27/fr.png)](https://www.mydealz.fr)        
-[![UK](https://flagcdn.com/36x27/gb.png)](https://www.hotukdeals.com)        
-[![Polen](https://flagcdn.com/36x27/pl.png)](https://www.pepper.pl)        
-[![Schweden](https://flagcdn.com/36x27/se.png)](https://www.pepper.se)        
-[![Österreich](https://flagcdn.com/36x27/at.png)](https://www.preisjaeger.at)        
+  
