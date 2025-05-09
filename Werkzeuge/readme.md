@@ -15,7 +15,7 @@
 ## Web Tech  
 [MyDealz auf BuildWiht](https://builtwith.com/?https%3a%2f%2fwww.mydealz.de%2f)  
 
-## [Andere Githubs](mydealz-Manager/andere%20myDealz%20Projekte/README.md)
+## [README der anderen myDealz Projekte](andere%20myDealz%20Projekte/README.md)  
 [MydealzScraper](https://github.com/mhvuze/MydealzScraper)  
 []()  
 []()  
