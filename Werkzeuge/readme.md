@@ -27,4 +27,16 @@
 
 ## 🖥️ JavaScript in der Entwicklerkonsole  
 🧭 [Überblick und Aufbau der Chrome Developer-Tools](https://kulturbanause.de/blog/die-chrome-entwicklertools-devtools-fuer-designer-und-einsteiger/#h-uberblick-und-aufbau-der-chrome-developer-tools)  
-📋 [Console – Übersicht ](https://developer.chrome.com/docs/devtools/console?hl=de)
+📋 [Console – Übersicht ](https://developer.chrome.com/docs/devtools/console?hl=de)  
+
+
+
+  ## 🌍 Mydealz in anderen Ländern
+
+[![Italien](https://flagcdn.com/24x18/it.png)](https://www.mydealz.it)  
+[![Spanien](https://flagcdn.com/24x18/es.png)](https://www.mydealz.es)  
+[![Frankreich](https://flagcdn.com/24x18/fr.png)](https://www.mydealz.fr)  
+[![UK](https://flagcdn.com/24x18/gb.png)](https://www.hotukdeals.com)  
+[![Polen](https://flagcdn.com/24x18/pl.png)](https://www.pepper.pl)  
+[![Schweden](https://flagcdn.com/24x18/se.png)](https://www.pepper.se)  
+[![Österreich](https://flagcdn.com/24x18/at.png)](https://www.preisjaeger.at)
