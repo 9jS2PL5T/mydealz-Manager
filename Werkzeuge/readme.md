@@ -1,4 +1,4 @@
-# Sammlung aller Nützlichen Werkzeuge
+# Sammlung aller Nützlichen Werkzeuge und Informationen  
 
 ## Markdown für Readme.md
 [https://markdown-it.github.io/](https://markdown-it.github.io/)  
