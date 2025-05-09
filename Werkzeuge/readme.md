@@ -14,7 +14,7 @@
 🇪🇸  [Spanisch](https://www.chollometro.com/)  
 🇫🇷 [Französisch](https://www.dealabs.com/)  
 🇬🇧 [UK](https://www.hotukdeals.com/)  
-<img src="https://twemoji.maxcdn.com/v/latest/72x72/1f1ee-1f1f9.png" width="20" alt="Italy"> [Italy](https://www.pepper.it/)  
+<img src="https://flagcdn.com/16x12/it.png" width="16" alt="IT"> Italien [Italy](https://www.pepper.it/)  
 🇵🇱 [Polen](https://www.pepper.pl/)  
 🇸🇪 [Schweden](https://www.pepperdeals.se/)  
 🇦🇹 [Österreich](https://www.preisjaeger.at/)  
