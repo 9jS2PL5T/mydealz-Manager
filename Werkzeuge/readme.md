@@ -1,12 +1,10 @@
 # Sammlung aller Nützlichen Werkzeuge und Informationen  
 
-## Markdown für Readme.md
+## 🛠️  Markdown für Readme.md
 [https://markdown-it.github.io/](https://markdown-it.github.io/)  
 [GitHub-Dokumentation](https://docs.github.com/de/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax)  
 
-
-
-## Web Tech  
+## ⚙️ Web Tech (analysieren wie die Webseite funktioniert)
 [MyDealz auf BuildWiht](https://builtwith.com/?https%3a%2f%2fwww.mydealz.de%2f)  
 
 ## [README der anderen myDealz Projekte](https://github.com/9jS2PL5T/mydealz-Manager/tree/main/andere%20myDealz%20Projekte)   
