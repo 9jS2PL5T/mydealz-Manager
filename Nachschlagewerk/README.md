@@ -1,12 +1,5 @@
 # Grundlegende Funktionen
 
-## 🛠️  Markdown für Readme.md
-[https://markdown-it.github.io/](https://markdown-it.github.io/)  
-[GitHub-Dokumentation](https://docs.github.com/de/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax)  
-
-## ⚙️ Web Tech (analysieren wie die Webseite funktioniert)
-[MyDealz auf BuildWiht](https://builtwith.com/?https%3a%2f%2fwww.mydealz.de%2f)  
-
 ## Andere Githubs
 [MydealzScraper](https://github.com/mhvuze/MydealzScraper)  
 
