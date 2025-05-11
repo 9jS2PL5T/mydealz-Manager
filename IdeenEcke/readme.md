@@ -10,7 +10,9 @@ dann wird das ganze ja wieder interessant desshalb sollte eine mischung aus Arti
 ```
 #### Alter Preis  
 ``` html 
-<div class="flex boxAlign-ai--all-c"><span class="text--lineThrough space--ml-1 color--text-TranslucentSecondary size--all-xl size--fromW3-xxl"> 1.799€ </span><button type="button" class="color--text-NeutralSecondary flex space--ml-1 button--square"><!----><span class="flex--inline boxAlign-ai--all-c"><svg width="14" height="14" class="icon icon--info"><use xlink:href="/assets/img/ico_03e08.svg#info"></use></svg><span class="popover-origin"><!----></span></span></button></div>
+<div class="flex boxAlign-ai--all-c"><span class="text--lineThrough space--ml-1 color--text-TranslucentSecondary size--all-xl size--fromW3-xxl"> 1.799€
+</span><button type="button" class="color--text-NeutralSecondary flex space--ml-1 button--square"><!----><span class="flex--inline boxAlign-ai--all-c">
+<svg width="14" height="14" class="icon icon--info"><use xlink:href="/assets/img/ico_03e08.svg#info"></use></svg><span class="popover-origin"><!----></span></span></button></div>
 ```  
 #### Ersparnis in %
 ``` html
