@@ -1,4 +1,5 @@
 Installation: https://greasyfork.org/de/scripts/522038-mydealz-manager
+myDealz Diskussion: https://www.mydealz.de/diskussion/tampermonkey-script-fur-mydealz-2299700
 
 Für Smartphone und Desktop optimiert.
 
