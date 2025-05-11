@@ -30,6 +30,7 @@ link  color--text-NeutralPrimary" data-t-click="" data-t="merchantLink"> FlexiSp
 srcset="https://static.mydealz.de/users/raw/default/2648675_15/fi/96x96/qt/45/2648675_15.jpg 2x" alt="Acuario's Profilbild"
 class="size--all-s size--fromW3-m avatar--type-xs img img--type-entity img--square-s"><span class="overflow--ellipsis
 size--all-xs size--fromW3-s"> Veröffentlicht von Acuario </span><svg width="14" height="14" class="size--all-xs
-color--graphic-TranslucentTertiary icon icon--verified"><use xlink:href="/assets/img/ico_03e08.svg#verified"></use></svg></span>
+color--graphic-TranslucentTertiary icon icon--verified"><use xlink:href="/assets/img/ico_03e08.svg#verified">
+</use></svg></span>
 ``` 
 
