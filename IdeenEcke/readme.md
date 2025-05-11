@@ -1,6 +1,22 @@
 ## [Mydealz Feedback Ecke](https://www.mydealz.de/feedback)
 #### [Einzelne User blockieren](https://www.mydealz.de/feedback/einzelne-user-blockieren-2500450)  
 
+## Geizfaktor  
+Wer hat nicht die Faxen dicke von "-6% " und somit eine ersparnis von 0,80€ ?  Aber hey das Problem ist ja noch etwas anders, wenn der Artikel 1.699€ kostet statt 1.799€  
+dann wird das ganze ja wieder interessant desshalb sollte eine mischung aus Artikel ausblenden wenn unter ## % ersparnis und weniger als ## € ersparniss. wobei die werte selber festgelegt werden könnten.  
+#### Neuer Preis  
+``` html  
+<span class="vAlign--all-tt"><span class="threadItemCard-price text--b thread-price">1.699€</span></span>
+```
+#### Alter Preis  
+``` html 
+<div class="flex boxAlign-ai--all-c"><span class="text--lineThrough space--ml-1 color--text-TranslucentSecondary size--all-xl size--fromW3-xxl"> 1.799€ </span><button type="button" class="color--text-NeutralSecondary flex space--ml-1 button--square"><!----><span class="flex--inline boxAlign-ai--all-c"><svg width="14" height="14" class="icon icon--info"><use xlink:href="/assets/img/ico_03e08.svg#info"></use></svg><span class="popover-origin"><!----></span></span></button></div>
+```  
+#### Ersparnis in %
+``` html
+<div class="textBadge bRad--a-m flex--inline text--b boxAlign-ai--all-c size--all-s size--fromW3-m space--h-1 space--ml-1 space--mr-0 textBadge--green"> -6% </div>
+```  
+
 
 ## General Editing mode  
 da stelle ich mir sowas vor, dass man auf einen Button mit "Multi Edit" oder "Selection Mode" klickt und dann die elemente, die wir schon mit dem zahnradmenü auswählen kann auch hervorgehoben werden, diese sollten dann im selection mode als button zur verfügung stehen, und wenn diese als buttons gedrückt werden die hervorhebung bzw. farbe ändern, so dass es aussieht wie wenn der button aktiviert/ gedrückt wird und dann vielleicht noch leicht rötlich hinterlegt, das ganze soll so ähnlich funktionieren wie der element picker bei ublock origin.
