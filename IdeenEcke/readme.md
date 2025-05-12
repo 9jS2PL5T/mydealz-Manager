@@ -81,4 +81,12 @@ overflow--wrap-off link  color--text-NeutralPrimary" data-t-click="" data-t="mer
 #### Benuztzer  
 ``` html
 <span class="overflow--ellipsis size--all-xs size--fromW3-s"> Veröffentlicht von lluni </span>
-```  
+```
+#### Dealtemperatur
+``` html
+<button title="Derzeit bewertet mit 656°. Dein Vote verändert die Temperatur!"  
+class="cept-vote-temp vote-temp size--all-m space--l-half-1 vote-temp--burn space--mh-1"  
+style="position: relative;"><span class="overflow--wrap-off">656° </span><!---->  
+<div style="position: absolute; left: 0px; top: 0px; width: 100%; height: 100%;  
+display: none; z-index: 10001; pointer-events: none;"></div></button>
+```
