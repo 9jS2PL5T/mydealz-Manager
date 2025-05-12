@@ -53,5 +53,30 @@ class="size--all-s size--fromW3-m avatar--type-xs img img--type-entity img--squa
 size--all-xs size--fromW3-s"> Veröffentlicht von Acuario </span><svg width="14" height="14" class="size--all-xs
 color--graphic-TranslucentTertiary icon icon--verified"><use xlink:href="/assets/img/ico_03e08.svg#verified">
 </use></svg></span>
-``` 
+```
 
+## Weitere Elemente als Variable speichern  
+Alter Preis (durchgestrichen)  
+``` html
+<span class="color--text-NeutralSecondary text--lineThrough space--ml-1 size--all-m"> 353,82€ </span>
+```
+
+Neuer Preis 
+``` html
+<span class="text--b size--all-xl size--fromW3-xxl thread-price"> 317,99€ </span>
+```
+
+Ersparnis in %  
+``` html
+<div class="textBadge bRad--a-m flex--inline text--b boxAlign-ai--all-c size--all-s size--fromW3-m space--h-1 space--ml-1 space--mr-0 textBadge--green"> -10% </div>
+```
+
+Händler  
+``` html
+<a href="/search/deals?merchant-id=723" class="text--b color--text-AccentBrand overflow--wrap-off link  color--text-NeutralPrimary" data-t-click="" data-t="merchantLink"> Epson </a>
+```
+
+Benuztzer  
+``` html
+<span class="overflow--ellipsis size--all-xs size--fromW3-s"> Veröffentlicht von lluni </span>
+```  
