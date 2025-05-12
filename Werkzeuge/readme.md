@@ -7,7 +7,9 @@
 ## ⚙️ Web Tech (analysieren wie die Webseite funktioniert)
 🔍 [MyDealz auf BuiltWith](https://builtwith.com/?https%3a%2f%2fwww.mydealz.de%2f)
   
-## 📘 [README der anderen myDealz Projekte](https://github.com/9jS2PL5T/mydealz-Manager/tree/main/andere%20myDealz%20Projekte)
+## 📘 [README der anderen myDealz Projekte](https://github.com/9jS2PL5T/mydealz-Manager/tree/main/andere%20myDealz%20Projekte)  
+## [andere Projekte auf ![Bild.svg](https://www.mydealz.de/assets/img/logo/default-dark_d4804.svg)](https://github.com/9jS2PL5T/mydealz-Manager/tree/main/andere%20myDealz%20Projekte)
+
   
 ## 🧩 Regular Expression  
 🧠 [Regulex](https://jex.im/regulex/#!flags=&re=%5E(a%7Cb)*%3F%24)  
