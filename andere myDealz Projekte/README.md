@@ -6,7 +6,7 @@
 [Mydealz verwendet GraphQL](https://www.mydealz.de/diskussion/neue-link-struktur-von-mydealz-2462696#comment-50166908)  
 
 
-# Github Projekte  
+# andere Github Projekte  
 [MydealzScraper](https://github.com/mhvuze/MydealzScraper)  
 []()  
 []()  
