@@ -1,5 +1,5 @@
 ##  [Mydealz Feedback Ecke ![Daumen hoch](https://www.mydealz.de/assets/img/emojis/thumb_7d48b.svg)](https://www.mydealz.de/feedback)  
-## [Mydealz Feedback Ecke <img src="https://www.mydealz.de/assets/img/emojis/thumb_7d48b.svg" width="30">](https://www.mydealz.de/feedback)  
+## [Mydealz Feedback Ecke <img src="https://www.mydealz.de/assets/img/emojis/thumb_7d48b.svg" width="50">](https://www.mydealz.de/feedback)  
 
 
 #### [Einzelne User blockieren](https://www.mydealz.de/feedback/einzelne-user-blockieren-2500450)  
