@@ -1,5 +1,6 @@
 # Mydealz sektion  
 ### [Mydealz Feedback Ecke <img src="https://www.mydealz.de/assets/img/emojis/thumb_7d48b.svg" width="50">](https://www.mydealz.de/feedback)  
+### [Sammlung: Starten statt warten - MyDealz selber verbessern <img src="https://www.mydealz.de/assets/img/emojis/cool_b7b27.svg" width="30">](https://www.mydealz.de/diskussion/sammlung-mydealz-auch-ohne-app-nutzen-2035404)  
 [Sammlung: Starten statt warten - MyDealz selber verbessern](https://www.mydealz.de/diskussion/sammlung-mydealz-auch-ohne-app-nutzen-2035404)  
 
 
