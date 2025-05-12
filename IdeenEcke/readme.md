@@ -58,6 +58,7 @@ color--graphic-TranslucentTertiary icon icon--verified"><use xlink:href="/assets
 ```
 
 ## Weitere Elemente als Variable speichern  
+### Einfach nur eine Kurze Liste mit den "Interessantesten" HTML Containern für Copy Paste in´s LLM  
 #### Alter Preis (durchgestrichen)  
 ``` html
 <span class="color--text-NeutralSecondary text--lineThrough space--ml-1 size--all-m"> 353,82€ </span>
@@ -80,7 +81,7 @@ size--all-s size--fromW3-m space--h-1 space--ml-1 space--mr-0 textBadge--green">
 overflow--wrap-off link  color--text-NeutralPrimary" data-t-click="" data-t="merchantLink"> Epson </a>
 ```
 
-#### Benuztzer  
+#### Benutzer
 ``` html
 <span class="overflow--ellipsis size--all-xs size--fromW3-s"> Veröffentlicht von lluni </span>
 ```
@@ -111,14 +112,8 @@ icon icon--truck space--mr-2p"><use xlink:href="/assets/img/ico_03e08.svg#truck"
 </use></svg><span class="overflow--wrap-off"> 5,95€ </span></span>
 ```
 
-#### Versandkosten
-``` html  
-<span class="flex--inline boxAlign-ai--all-c color--text-TranslucentSecondary
-size--all-s size--fromW3-m"><span class="size--all-xs size--fromW3-s"> inkl.
-</span><svg width="18px" height="14px" class="color--graphic-TranslucentSecondary
-icon icon--truck space--mr-2p"><use xlink:href="/assets/img/ico_03e08.svg#truck">
-</use></svg><span class="overflow--wrap-off"> 5,95€ </span></span>
-```
 
 ## Händler durch icon ersetzen? 
+``` html  
 <a href="/search/deals?merchant-id=449" class="text--b color--text-AccentBrand overflow--wrap-off link  color--text-NeutralPrimary" data-t-click="" data-t="merchantLink"> dm </a>  
+```
