@@ -1,6 +1,6 @@
 ### [Installation von Greasyfork](https://greasyfork.org/de/scripts/522038-mydealz-manager)  
-### [myDealz Diskussion](https://www.mydealz.de/diskussion/tampermonkey-script-fur-mydealz-2299700)
-
+### [Diskussion auf myDealz](https://www.mydealz.de/diskussion/tampermonkey-script-fur-mydealz-2299700)
+https://www.mydealz.de/assets/img/logo/default-dark_d4804.svg
 Für Smartphone und Desktop optimiert.
 
 Funktioniert auf:
