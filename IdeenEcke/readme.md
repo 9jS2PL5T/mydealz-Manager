@@ -92,3 +92,33 @@ style="position: relative;"><span class="overflow--wrap-off">656° </span><!----
 <div style="position: absolute; left: 0px; top: 0px; width: 100%; height: 100%;  
 display: none; z-index: 10001; pointer-events: none;"></div></button>
 ```
+#### Anzahl der kommentare
+``` html  
+<a href="/deals/xiaomi-tv-ff-pro-2026-xiaomi-earlybird-aktion-bis-zu-12-zusatzlich-  
+sofortrabatt-durch-mi-points-2569496#comments" class="flex--shrink-0 button button  
+--type-text button--mode-secondary  2569496" title="Kommentare" data-t-click=""  
+data-t="commentsLink"><svg width="22" height="22" class="icon icon--comments  
+space--mr-1"><use xlink:href="/assets/img/ico_03e08.svg#  
+comments"></use></svg> 5 </a>
+```
+
+#### Versandkosten
+``` html  
+<span class="flex--inline boxAlign-ai--all-c color--text-TranslucentSecondary
+size--all-s size--fromW3-m"><span class="size--all-xs size--fromW3-s"> inkl.
+</span><svg width="18px" height="14px" class="color--graphic-TranslucentSecondary
+icon icon--truck space--mr-2p"><use xlink:href="/assets/img/ico_03e08.svg#truck">
+</use></svg><span class="overflow--wrap-off"> 5,95€ </span></span>
+```
+
+#### Versandkosten
+``` html  
+<span class="flex--inline boxAlign-ai--all-c color--text-TranslucentSecondary
+size--all-s size--fromW3-m"><span class="size--all-xs size--fromW3-s"> inkl.
+</span><svg width="18px" height="14px" class="color--graphic-TranslucentSecondary
+icon icon--truck space--mr-2p"><use xlink:href="/assets/img/ico_03e08.svg#truck">
+</use></svg><span class="overflow--wrap-off"> 5,95€ </span></span>
+```
+
+## Händler durch icon ersetzen? 
+<a href="/search/deals?merchant-id=449" class="text--b color--text-AccentBrand overflow--wrap-off link  color--text-NeutralPrimary" data-t-click="" data-t="merchantLink"> dm </a>  
