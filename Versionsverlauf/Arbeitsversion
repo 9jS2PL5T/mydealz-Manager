@@ -16,7 +16,7 @@
 // ==/UserScript==
 
 // Versions-Änderungen
-//
+// ADD: Drag & Drop für SettingsUI
 
 //#region --- 1. Initialisierung und Grundeinstellungen ---
 
@@ -733,6 +733,7 @@ function initUIContainers() {
     merchantListDiv = document.createElement('div');
     wordsListDiv = document.createElement('div');
 }
+
 function updateUITheme() {
     const colors = getThemeColors();
 
@@ -798,13 +799,13 @@ function createSettingsUI() {
         left: 50%;
         transform: translate(-50%, -50%);
         width: 300px;
-        height: 300px; /* Further reduced from 380px to 370px */
+        height: 300px;
         max-width: 90vw;
         max-height: 90vh;
         background: ${colors.background};
         border: 1px solid ${colors.border};
         border-radius: 5px;
-        padding: 8px 15px; /* Reduced top/bottom padding from 10px to 8px */
+        padding: 8px 15px;
         z-index: 1000;
         color: ${colors.text};
         display: flex;
@@ -845,8 +846,8 @@ function createSettingsUI() {
         overflow-y: auto;
         margin-right: -5px;
         padding-right: 5px;
-        margin-bottom: 5px; /* Reduced from 10px to 5px */
-        max-height: calc(300px - 60px); /* Wichtig: Ermöglicht Scrolling */
+        margin-bottom: 5px;
+        max-height: calc(300px - 60px);
     `;
     contentContainer.id = 'mdm-settings-content'; // ID hinzufügen für einfacheres Debugging
 
@@ -1081,7 +1082,9 @@ function createSettingsUI() {
             <div style="height: 1px; background: ${colors.border}; opacity: 0.3; margin: 6px 0;"></div>
 
             <div class="toggle-option" style="display: flex; justify-content: space-between; align-items: center;">
-                <span>Händler im Titel</span>
+                <span style="display: flex; align-items: center; cursor: help;" title="Gibt es zu dem Deal einen hinterlegten Händler und befindet sich der Name des Händlers im Titel, so wird dieser Name aus dem Titel ausgeblendet.">
+                    Händler im Titel
+                </span>
                 <button type="button" id="hideMatchingMerchantNames" class="eye-toggle" style="
                     background: none;
                     border: none;
@@ -1104,7 +1107,7 @@ function createSettingsUI() {
 
             <!-- Neue Toggle-Option für Sortierung merken (VERSCHOBEN UNTER HÄNDLER IM TITEL) -->
             <div class="toggle-option" style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="display: flex; align-items: center; cursor: help;" title="Merkt sich die ausgewählte Sortierung bei der Suche">
+                <span style="display: flex; align-items: center; cursor: help;" title="Standardmäßig wird nach Relevanz sortiert. Wählt der Nutzer eine andere Sortierung, wird diese gespeichert und bei der nächsten Suche automatisch angewandt.">
                     Sortierung merken
                 </span>
                 <button type="button" id="rememberSort" class="toggle-switch" style="
@@ -1169,7 +1172,7 @@ function createSettingsUI() {
     // Footer mit fixem Schließen-Button - weniger Abstand zum Content
     const footer = document.createElement('div');
     footer.style.cssText = `
-        margin-top: 2px; /* Further reduced from 5px to 2px */
+        margin-top: 2px;
         flex-shrink: 0;
         display: flex;
         justify-content: center;
@@ -1241,16 +1244,16 @@ function createSettingsUI() {
     const accordionSectionStyle = document.createElement('style');
     accordionSectionStyle.textContent = `
         .accordion-section {
-            margin-bottom: 4px; /* Add a small gap between sections */
+            margin-bottom: 4px;
         }
         .accordion-header {
             font-size: 18px;
             font-weight: bold;
-            padding: 6px 8px !important; /* Reduced padding */
-            color: firebrick !important; /* <– das fehlt dir noch */
+            padding: 6px 8px !important;
+            color: var(--primary-color, #24a300) !important;
         }
         .accordion-content {
-            padding: 6px 8px !important; /* Reduced padding */
+            padding: 6px 8px !important;
         }
     `;
     document.head.appendChild(accordionSectionStyle);
@@ -1388,12 +1391,7 @@ function createSettingsUI() {
     const showWordsListButton = document.getElementById('showWordsListButton');
     if (showWordsListButton) {
         showWordsListButton.addEventListener('click', () => {
-            if (activeSubUI === 'words') {
-                closeActiveSubUI();
-            } else {
-                if (activeSubUI) closeActiveSubUI();
-                activeSubUI = 'words';
-                showWordsListButton.innerHTML = '<i class="fas fa-times"></i> Wortfilter schließen';
+            if (switchSubUI('words')) {
                 createExcludeWordsUI();
             }
         });
@@ -1403,16 +1401,18 @@ function createSettingsUI() {
     const showMerchantListButton = document.getElementById('showMerchantListButton');
     if (showMerchantListButton) {
         showMerchantListButton.addEventListener('click', () => {
-            if (activeSubUI === 'merchant') {
-                closeActiveSubUI();
-            } else {
-                if (activeSubUI) closeActiveSubUI();
-                activeSubUI = 'merchant';
-                showMerchantListButton.innerHTML = '<i class="fas fa-times"></i> Händlerfilter schließen';
+            if (switchSubUI('merchant')) {
                 createMerchantListUI();
             }
         });
     }
+
+    // Sidebar Elements Button
+    document.getElementById('openSidebarElementsButton').addEventListener('click', () => {
+        if (switchSubUI('sidebar')) {
+            createSidebarElementsUI();
+        }
+    });
 
     // Add event listeners only if newWordInput exists
     const newWordInput = document.getElementById('newWordInput');
@@ -1621,19 +1621,6 @@ function createSettingsUI() {
         updateSidebarElementsUI();
     });
 
-    document.getElementById('openSidebarElementsButton').addEventListener('click', (e) => {
-        // Prüfen ob das UI bereits geöffnet ist
-        const sidebarElementsDiv = document.getElementById('sidebarElementsDiv');
-
-        if (sidebarElementsDiv) {
-            // UI ist bereits offen - schließen
-            sidebarElementsDiv.remove();
-        } else {
-            // UI ist geschlossen - öffnen
-            createSidebarElementsUI();
-        }
-    });
-
     document.getElementById('hideColdDeals')?.addEventListener('click', async (e) => {
         // Toggle state
         hideColdDeals = !hideColdDeals;
@@ -1657,6 +1644,9 @@ function createSettingsUI() {
 }
 
 function makeDraggable(element) {
+    // Don't make draggable on touch devices
+    if (IS_TOUCH_DEVICE) return;
+
     let isDragging = false;
     let offsetX = 0, offsetY = 0;
     let wasMoved = false;
@@ -1701,13 +1691,29 @@ function makeDraggable(element) {
         const maxX = window.innerWidth - rect.width;
         const maxY = window.innerHeight - rect.height;
 
-        element.style.left = Math.min(Math.max(0, newLeft), maxX) + 'px';
-        element.style.top = Math.min(Math.max(0, newTop), maxY) + 'px';
+        // Hauptfenster Position aktualisieren
+        const finalLeft = Math.min(Math.max(0, newLeft), maxX);
+        const finalTop = Math.min(Math.max(0, newTop), maxY);
 
-        // Aktualisiere die Position der Sub-UIs während des Dragging
-        requestAnimationFrame(() => {
-            updateSubUIPositions();
-        });
+        element.style.left = finalLeft + 'px';
+        element.style.top = finalTop + 'px';
+
+        // Direkt die Sub-UIs aktualisieren
+        if (wordsListDiv?.parentNode || merchantListDiv?.parentNode || document.getElementById('sidebarElementsDiv')) {
+            const settingsRect = element.getBoundingClientRect();
+            [
+                wordsListDiv,
+                merchantListDiv,
+                document.getElementById('sidebarElementsDiv'),
+                document.getElementById('wordSuggestionList')
+            ].forEach(ui => {
+                if (ui?.parentNode) {
+                    ui.style.position = 'fixed';
+                    ui.style.top = `${settingsRect.top}px`;
+                    ui.style.left = `${settingsRect.right + 10}px`;
+                }
+            });
+        }
     };
 
     const stopDrag = () => {
@@ -1723,6 +1729,21 @@ function makeDraggable(element) {
             top: rect.top,
             wasMoved: true
         }));
+
+        // Finale Position der Sub-UIs aktualisieren
+        const settingsRect = element.getBoundingClientRect();
+        [
+            wordsListDiv,
+            merchantListDiv,
+            document.getElementById('sidebarElementsDiv'),
+            document.getElementById('wordSuggestionList')
+        ].forEach(ui => {
+            if (ui?.parentNode) {
+                ui.style.position = 'fixed';
+                ui.style.top = `${settingsRect.top}px`;
+                ui.style.left = `${settingsRect.right + 10}px`;
+            }
+        });
     };
 
     header.addEventListener('mousedown', startDrag);
@@ -1741,6 +1762,21 @@ function makeDraggable(element) {
                 element.style.transform = 'none';
                 element.style.right = 'auto';
                 element.style.bottom = 'auto';
+
+                // Auch die Sub-UIs an die gespeicherte Position anpassen
+                const settingsRect = element.getBoundingClientRect();
+                [
+                    wordsListDiv,
+                    merchantListDiv,
+                    document.getElementById('sidebarElementsDiv'),
+                    document.getElementById('wordSuggestionList')
+                ].forEach(ui => {
+                    if (ui?.parentNode) {
+                        ui.style.position = 'fixed';
+                        ui.style.top = `${settingsRect.top}px`;
+                        ui.style.left = `${settingsRect.right + 10}px`;
+                    }
+                });
             }
         } catch (e) {
             console.error('Error restoring settings position:', e);
@@ -1896,7 +1932,7 @@ function createSidebarElementsUI() {
     });
 }
 
-// Füge diese Funktion zum Togglen der Feed-Banner hinzu
+// Togglen der Feed-Banner
 function toggleFeedBanners(hide) {
     const feedBannerConfig = SIDEBAR_ELEMENTS.banners.feedBanners;
     if (!feedBannerConfig) return;
@@ -2382,7 +2418,7 @@ function updateSuggestionList() {
         z-index: 1002;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         display: block;
-        -webkit-overflow-scrolling: touch; /* Für besseres Scrolling auf iOS */
+        -webkit-overflow-scrolling: touch;
     `;
 
     // Add touch event handlers for mobile scrolling
@@ -2900,27 +2936,35 @@ function handleMerchantDelete(e) {
 // === Layout & UI-Hilfen ===
 // Sub-UI Position berechnen
 function getSubUIPosition() {
-    // Settings-UI Position ermitteln
-    const settingsDiv = document.getElementById('mdm-settings-popup') || document.querySelector('[id^="mdm-settings"]');
     const settingsRect = settingsDiv?.getBoundingClientRect();
-    
+
     if (!settingsRect) return '';
 
-    // Position rechts neben dem Settings-UI
-    const left = settingsRect.right + 10;
-    const top = settingsRect.top;
-
-    return `
-        position: fixed;
-        top: ${top}px;
-        left: ${left}px;
-        z-index: 10002;
-    `;
-}0
+    if (IS_TOUCH_DEVICE) {
+        return `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10002;
+        `;
+    } else {
+        const gap = 10;
+        return `
+            position: fixed;
+            top: ${settingsRect.top}px;
+            left: ${settingsRect.right + gap}px;
+            z-index: 10002;
+        `;
+    }
+}
 
 // Funktion zum Aktualisieren der Sub-UI Positionen
 function updateSubUIPositions() {
-    // Hole Settings-UI Position
+    // Skip position updates on mobile
+    if (IS_TOUCH_DEVICE) return;
+
+    // Settings-UI Position ermitteln
     const settingsDiv = document.getElementById('mdm-settings-popup') || document.querySelector('[id^="mdm-settings"]');
     if (!settingsDiv) return;
 
@@ -2958,20 +3002,61 @@ function addMerchantToList(merchant, merchantList) {
     merchantList.insertBefore(div, merchantList.firstChild);
 }
 
+// Helper function to manage Sub-UI states
+function switchSubUI(newUI) {
+    // If trying to open the same UI that's already active, close it
+    if (activeSubUI === newUI) {
+        closeActiveSubUI();
+        return false;
+    }
+
+    // Close any active Sub-UI first
+    if (activeSubUI) {
+        closeActiveSubUI();
+    }
+
+    // Set new active UI
+    activeSubUI = newUI;
+
+    // Update button texts
+    const merchantButton = document.getElementById('showMerchantListButton');
+    const wordsButton = document.getElementById('showWordsListButton');
+
+    if (merchantButton) {
+        merchantButton.innerHTML = activeSubUI === 'merchant'
+            ? '<i class="fas fa-times"></i> Händlerfilter schließen'
+            : '<i class="fas fa-store"></i> Händlerfilter verwalten';
+    }
+
+    if (wordsButton) {
+        wordsButton.innerHTML = activeSubUI === 'words'
+            ? '<i class="fas fa-times"></i> Wortfilter schließen'
+            : '<i class="fas fa-list"></i> Wortfilter verwalten';
+    }
+
+    return true;
+}
+
 function closeActiveSubUI() {
     if (activeSubUI === 'merchant') {
         merchantListDiv?.remove();
-        const btn = document.getElementById('showMerchantListButton');
-        if (btn) {
-            btn.innerHTML = '<i class="fas fa-store"></i> Händlerfilter verwalten';
-            btn.removeAttribute('data-processing');
-        }
     } else if (activeSubUI === 'words') {
         wordsListDiv?.remove();
-        const btn = document.getElementById('showWordsListButton');
-        if (btn) {
-            btn.innerHTML = '<i class="fas fa-list"></i> Wortfilter verwalten';
-        }
+    } else if (activeSubUI === 'sidebar') {
+        document.getElementById('sidebarElementsDiv')?.remove();
+    }
+
+    // Reset button texts
+    const merchantButton = document.getElementById('showMerchantListButton');
+    const wordsButton = document.getElementById('showWordsListButton');
+
+    if (merchantButton) {
+        merchantButton.innerHTML = '<i class="fas fa-store"></i> Händlerfilter verwalten';
+        merchantButton.removeAttribute('data-processing');
+    }
+
+    if (wordsButton) {
+        wordsButton.innerHTML = '<i class="fas fa-list"></i> Wortfilter verwalten';
     }
 
     activeSubUI = null;
@@ -3579,7 +3664,7 @@ function removeMerchantNameFromTitle(title, merchant) {
 
     // Normalisiere Händlernamen und hole Konfiguration
     const merchantName = merchant.toLowerCase()
-    .replace('...', '')
+                            .replace('...', '')
 
     // Spezialfall für eSIM.sm - wir wollen "eSIM" nicht entfernen, da es ein Produktname ist
     if (merchantName === 'esim.sm' && title.toLowerCase().includes('auf esim')) {
@@ -3602,6 +3687,14 @@ function removeMerchantNameFromTitle(title, merchant) {
 
         // Check if merchant name is contained in the parentheses at the beginning
         if (lowerTitle.substring(0, lowerTitle.indexOf(')')).includes(lowerMerchant)) {
+            // Prüfe auf Slash-Format
+            if (title.match(/^\([^/]+\/[^)]+\)/i)) {
+                // Behandle Slash-Format separat
+                return title.replace(
+                    new RegExp(`\\(${merchantName}\\s*/\\s*(.+?)\\)`, 'i'),
+                    '($1)'
+                );
+            }
             return title.replace(/^\([^)]+\)\s*/, '');
         }
     }
@@ -3652,15 +3745,43 @@ function removeMerchantNameFromTitle(title, merchant) {
                     replacements: [],
                     keepBrands: []
                 };
-            case 'Tradepub.com':
+            case 'TradePub.com':  // Füge zusätzliche Schreibweise hinzu
                 return {
-                    abbreviations: [],
+                    abbreviations: ['tradepub', 'Tradepub'],  // Beide Schreibweisen
                     replacements: [
                         { from: /\s+bei\s+tradepub\.com(?:\s+|$)/i, to: ' ' },
-                        // Entfernt "Tradepub.com:" am Anfang
-                        { from: /^tradepub\.com:\s*/i, to: '' }
+                        { from: /^tradepub\.com:\s*/i, to: '' },
+                        { from: /^\(tradepub\)\s*/i, to: '' },
+                        // Neues Pattern für (Tradepub) mit Groß-/Kleinschreibung
+                        { from: /^\((?:Tradepub|TRADEPUB|tradepub)\)\s*/i, to: '' }
                     ],
                     keepBrands: []
+                };
+            case 'Netto':
+                return {
+                    abbreviations: ['netto mit hund'],
+                    replacements: [
+                        // Entfernt "[Netto mit Hund]" Format
+                        { from: /\[netto\s+mit\s+hund\]\s*/i, to: '' }
+                    ],
+                    keepBrands: []
+                };
+            case 'A.T.U':
+                return {
+                    abbreviations: ['atu', 'a.t.u'],
+                    replacements: [
+                        { from: /(Sale)\s+bei\s+(?:ATU|A\.T\.U)(\s*;\s*)(Ab)/i, to: '$1$2$3' }
+                    ],
+                    keepBrands: []
+                };
+            case 'Uber Eats':
+                return {
+                    abbreviations: ['ubereats'],
+                    replacements: [
+                        // Spezifisches Pattern für "[UberEats Member Days]" Format
+                        { from: /\[UberEats\s+(Member\s+Days)\]/i, to: '[$1]' }
+                    ],
+                    keepBrands: ['Member Days']
                 };
             default:
                 return { abbreviations: [], replacements: [], keepBrands: [] };
@@ -3733,9 +3854,9 @@ function removeMerchantNameFromTitle(title, merchant) {
     if (merchantName.includes('.') || merchantName.includes('-shop')) {
         // Entferne TLD und mögliche Zusätze wie "-shop"
         const baseName = merchantName
-        .split('.')[0]  // Entferne TLD (.com, .de, etc.)
-        .replace(/-shop$/, '')  // Entferne mögliches "-shop" am Ende
-        .replace(/[^\w\s-]/g, ''); // Entferne alle Sonderzeichen außer Bindestriche und Leerzeichen
+            .split('.')[0]  // Entferne TLD (.com, .de, etc.)
+            .replace(/-shop$/, '')  // Entferne mögliches "-shop" am Ende
+            .replace(/[^\w\s-]/g, ''); // Entferne alle Sonderzeichen außer Bindestriche und Leerzeichen
 
         merchantVariants.push(baseName);
         // Füge auch Varianten mit unterschiedlicher Groß-/Kleinschreibung hinzu
@@ -3773,47 +3894,49 @@ function removeMerchantNameFromTitle(title, merchant) {
         const wordBoundaryPattern = needsSpecialBoundary ? escapedVariant : `\\b${escapedVariant}\\b`;
 
         if (needsSpecialBoundary) {
-            // Spezialfall für "bei ATU;" und ähnliche Muster
-            if (variant.toLowerCase() === 'atu' || variant.toLowerCase() === 'a.t.u') {
-                result = result.replace(
-                    /\s+bei\s+(?:A\.T\.U|ATU)(?:\s*;\s*)/i,
-                    ' ; '
-                );
-            }
+
         } else {
-            // Standardfall für Händlernamen ohne Punktuationen
+            // Handle parentheses with multiple entries separated by slashes first
+            const parenthesesPattern = new RegExp(
+                `\\(([^/]*?\\s*)?${escapedVariant}\\s*/\\s*([^)]+)\\)`,
+                'i'
+            );
+            if (result.match(parenthesesPattern)) {
+                const match = result.match(parenthesesPattern);
+                const before = match[1] ? match[1].trim() : '';
+                const after = match[2].trim();
+                const newContent = [before, after].filter(Boolean).join(' / ');
+                result = result.replace(parenthesesPattern, `(${newContent})`);
+            }
+
+            // Standard patterns for merchant names without punctuation
             result = result
-            // Händler am Ende oder in der Mitte mit "bei"
                 .replace(new RegExp(`\\s+bei\\s+${wordBoundaryPattern}\\s+`, 'i'), ' ')
                 .replace(new RegExp(`\\s+(?:bei\\s+)?${escapedVariant}(?:[-–]|\\s)*$`, 'i'), '')
-
-            // Genereller Ansatz für "auf [merchant]" Pattern - ohne speziellen Fall für eSIM
-                .replace(new RegExp(`\\s+auf\\s+${escapedVariant}$`, 'i'), '') // Wenn genau am Ende
-                .replace(new RegExp(`\\s+auf\\s+${escapedVariant}(?=\\s|$)`, 'i'), ''); // Mit folgendem Whitespace oder Ende
+                .replace(new RegExp(`\\s+auf\\s+${escapedVariant}$`, 'i'), '')
+                .replace(new RegExp(`\\s+auf\\s+${escapedVariant}(?=\\s|$)`, 'i'), '');
         }
 
         result = result
-        // Die restlichen Standardmuster
+            // Die restlichen Standardmuster
             .replace(new RegExp(`\\(${escapedVariant}:\\s*`, 'i'), '(')
             .replace(new RegExp(`${escapedVariant}:\\s*`, 'i'), '')
 
-        // Händler am Anfang (mit optionalem Punkt danach)
+            // Händler am Anfang (mit optionalem Punkt danach)
             .replace(new RegExp(`^${escapedVariant}\\s*\\.?\\s*[-–]?\\s*`, 'i'), '')
 
-        // FIX: Händler in eckigen Klammern - vollständig entfernen wenn sie allein sind
-            .replace(new RegExp(`\\[${escapedVariant}\\]\\s*`, 'i'), '')
+            // FIX: Händler in eckigen Klammern mit optionalen Leerzeichen
+            .replace(new RegExp(`\\[\\s*${escapedVariant}\\s*\\]\\s*`, 'i'), '')
 
-        // Händler mit Punkt als Trenner (am Anfang, in der Mitte oder am Ende)
+            // Händler mit Punkt als Trenner
             .replace(new RegExp(`^${escapedVariant}\\.\\s*`, 'i'), '')
             .replace(new RegExp(`\\s+${escapedVariant}\\.\\s+`, 'i'), ' ')
             .replace(new RegExp(`\\s+${escapedVariant}\\.\\s*$`, 'i'), '')
 
-        // Händler in Klammern mit fehlenden Klammern (spezifischer)
-            .replace(new RegExp(`^${escapedVariant}\\)\\s*`, 'i'), '')  // Fehlende öffnende Klammer
-            .replace(new RegExp(`\\(${escapedVariant}$`, 'i'), '')      // Fehlende schließende Klammer
+            // Händler in Klammern mit fehlenden Klammern
+            .replace(new RegExp(`^${escapedVariant}\\)\\s*`, 'i'), '')
+            .replace(new RegExp(`\\(${escapedVariant}$`, 'i'), '')
 
-        // Händler in Klammern (mit optionalen Klammern)
-            .replace(new RegExp(`\\(?${escapedVariant}\\)?\\s*`, 'i'), '')
             .replace(new RegExp(`\\(${escapedVariant}\\s+`, 'i'), '(');
     });
 
