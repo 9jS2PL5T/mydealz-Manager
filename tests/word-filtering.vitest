@@ -1,0 +1,204 @@
+import { describe, it, expect } from 'vitest';
+
+function testWordFiltering(excludeWords, processedTitle) {
+    // Hilfsfunktion für ß zu ss und ue zu ü Konvertierung - identisch zum Hauptscript
+    function normalizeGerman(text) {
+        return text.toLowerCase()
+            .replace(/ß/g, 'ss')
+            .replace(/ue/g, 'ü');
+    }
+
+    // Die Kernfilterlogik aus shouldExcludeArticle, ohne die DOM-bezogenen Teile
+    return excludeWords.some(word => {
+        const searchTerm = normalizeGerman(word);
+        const lowerTitle = normalizeGerman(processedTitle);
+
+        // Handle words in brackets like [CB]
+        if (searchTerm.startsWith('[') && searchTerm.endsWith(']')) {
+            const match = lowerTitle.includes(searchTerm);
+            return match;
+        }
+
+        // Handle words with special characters (+)
+        if (searchTerm.includes('+')) {
+            const match = lowerTitle.includes(searchTerm);
+            return match;
+        }
+
+        // Handle multi-word phrases
+        if (searchTerm.includes(' ') || searchTerm.includes('-')) {
+            // Keine Variationen mehr erzeugen - nur exakte Matches erlauben
+            const variations = [searchTerm];
+            const uniqueVariations = [...new Set(variations)];
+
+            return uniqueVariations.some(variant => {
+                if (variant.includes(' ')) {
+                    const words = variant.split(' ').filter(w => w.length > 0);
+
+                    // Füge Wortgrenzen-Prüfung für das erste Wort hinzu
+                    const firstWord = words[0];
+                    const escapedFirstWord = firstWord.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    const firstWordRegex = new RegExp(`\\b${escapedFirstWord}\\b`, 'i');
+
+                    // Wenn das erste Wort nicht mit Wortgrenzen gefunden wird, ist es kein Match
+                    if (!firstWordRegex.test(lowerTitle)) {
+                        return false;
+                    }
+
+                    // Exakte Übereinstimmung mit Leerzeichen suchen
+                    const spaceJoinedSearchTerm = words.join(' ');
+                    if (lowerTitle.includes(spaceJoinedSearchTerm)) {
+                        return true;
+                    }
+
+                    // Wenn keine exakte Übereinstimmung gefunden wurde, ist es kein Match
+                    return false;
+                }
+
+                // For hyphenated variations, ensure exact match with proper boundaries
+                if (variant.includes('-')) {
+                    // Exact hyphenated match required
+                    const escapedVariant = variant.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    const regex = new RegExp(`\\b${escapedVariant}\\b`, 'i');
+                    return regex.test(lowerTitle);
+                }
+
+                return false;
+            });
+        }
+
+        // Für einzelne Wörter: Einfache Wortgrenzen-Prüfung
+        const escapedTerm = searchTerm.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const regex = new RegExp(`\\b${escapedTerm}\\b`, 'i');
+        return regex.test(lowerTitle);
+    });
+}
+
+describe('Word Filtering Tests', () => {
+    // Deine bestehenden Tests bleiben gleich
+
+    describe('Basic Word Filtering', () => {
+        it('should filter simple words', () => {
+            expect(testWordFiltering(['test'], 'this is a test post')).toBe(true);
+            expect(testWordFiltering(['test'], 'this is testing')).toBe(false);
+            expect(testWordFiltering(['test'], 'contest post')).toBe(false);
+        });
+
+        it('should handle special bracket format', () => {
+            expect(testWordFiltering(['[CB]'], 'great [CB] deal')).toBe(true);
+            expect(testWordFiltering(['[LOCAL]'], '[local] store deal')).toBe(true);
+        });
+    });
+
+    describe('Multi-word Filtering', () => {
+        it('should filter hyphenated words', () => {
+            expect(testWordFiltering(['e-bike'], 'cheap e-bike for sale')).toBe(true);
+            expect(testWordFiltering(['e-bike'], 'cheap ebike deal')).toBe(false);
+        });
+
+        it('should filter word phrases', () => {
+            expect(testWordFiltering(['gaming laptop'], 'best gaming laptop deals')).toBe(true);
+            expect(testWordFiltering(['gaming laptop'], 'laptop gaming setup')).toBe(false);
+        });
+        it('should correctly handle DECT cases', () => {
+            expect(testWordFiltering(['DECT-Telefon'], 'DECT-Telefon im Angebot')).toBe(true);
+            expect(testWordFiltering(['DECT-Telefon'], 'dect-telefon günstig')).toBe(true);
+            expect(testWordFiltering(['DECT-Telefon'], 'DECT-Mobilteil im Sale')).toBe(false);
+            expect(testWordFiltering(['DECT-Telefon'], 'DECT-Telefon-Mit-Kabel Internet')).toBe(true);
+            expect(testWordFiltering(['DECT-Telefon'], 'DECT-Telefon-Test Review')).toBe(true);
+            expect(testWordFiltering(['DECT'], 'DECT-Telefon im Angebot')).toBe(true);
+            expect(testWordFiltering(['DECT-Telefon'], 'DECT im Angebot')).toBe(false);
+        });
+    });
+
+    describe('Special Characters', () => {
+        it('should handle plus signs', () => {
+            expect(testWordFiltering(['c++'], 'learn c++ programming')).toBe(true);
+            expect(testWordFiltering(['g+'], 'g+ subscription deal')).toBe(true);
+        });
+    });
+
+    describe('Case Sensitivity', () => {
+        it('should be case insensitive', () => {
+            expect(testWordFiltering(['USB'], 'usb cable sale')).toBe(true);
+            expect(testWordFiltering(['gaming'], 'GAMING mouse')).toBe(true);
+        });
+
+        it('should handle German special characters (ß/ss)', () => {
+            // Basic ß to ss conversion
+            expect(testWordFiltering(['süß'], 'süss zum deal')).toBe(true);
+            expect(testWordFiltering(['süss'], 'süß und lecker')).toBe(true);
+            expect(testWordFiltering(['sueß'], 'süß und lecker')).toBe(true);
+            expect(testWordFiltering(['straße'], 'strass zum deal')).toBe(false);
+            
+            // Should not match extended variations
+            expect(testWordFiltering(['süß'], 'suesse schokolade')).toBe(false);
+            expect(testWordFiltering(['suesse'], 'süß und lecker')).toBe(false);
+            expect(testWordFiltering(['größe'], 'grosse auswahl')).toBe(false);
+            expect(testWordFiltering(['grosse'], 'größe verfügbar')).toBe(false);
+        });
+    });
+
+    describe('Audio-Video Product Testing', () => {
+        it('should correctly identify Dolby Atmos in product descriptions', () => {
+            expect(testWordFiltering(['Dolby Atmos'], 'Hisense 50E7NQ 126 cm (50 Zoll) Fernseher, 4K UHD, QLED, HDR10, HDR10+ decoding, HLG, Dolby Vision Atmos, 60Hz, Smooth Motion | Amazon')).toBe(false);
+            expect(testWordFiltering(['Dolby Atmos'], 'Soundbar mit Dolby Atmos und Subwoofer')).toBe(true);
+            expect(testWordFiltering(['Dolby Atmos'], 'Dolby Digital Plus Soundbar')).toBe(false);
+        });
+
+        it('should handle compound audio format descriptions', () => {
+            expect(testWordFiltering(['Dolby Atmos'], 'Dolby Vision Atmos TV')).toBe(false);
+            expect(testWordFiltering(['Dolby Vision'], 'Dolby Vision Atmos TV')).toBe(true);
+            expect(testWordFiltering(['Dolby Atmos'], 'DolbyAtmos Sound')).toBe(false);
+            expect(testWordFiltering(['Dolby Atmos'], 'Dolby-Atmos-Soundbar')).toBe(false);            
+            expect(testWordFiltering(['Dolby-Atmos-Soundbar'], 'Dolby-Atmos-Soundbar')).toBe(true);            
+            expect(testWordFiltering(['Dolby-Atmos'], 'Dolby-Atmos-Soundbar')).toBe(true);
+        });
+
+        it('should distinguish between different Dolby formats', () => {
+            expect(testWordFiltering(['Dolby Vision'], 'TV with Dolby Digital')).toBe(false);
+            expect(testWordFiltering(['Dolby Digital'], 'Dolby Vision IQ & Atmos')).toBe(false);
+            expect(testWordFiltering(['Dolby Atmos'], 'Dolby TrueHD Audio')).toBe(false);
+        });
+
+        it('should handle partial matches within words', () => {
+            // This should likely fail with your current implementation
+            expect(testWordFiltering(['Atmos'], 'Dolby Vision/Atmos TV')).toBe(true);
+            expect(testWordFiltering(['Vision'], 'Supports Dolby Vision+Atmos')).toBe(true);
+        });
+    });
+    describe('TV Product Testing', () => {
+        it('should correctly identify TV types in product descriptions', () => {
+            expect(testWordFiltering(['OLED TV'], 'LG OLED42C47LA TV 42" (106 cm) OLED TV - Amazon Prime')).toBe(true);
+            expect(testWordFiltering(['OLED TV'], 'Samsung Neo QLED 4K Fernseher')).toBe(false);
+            expect(testWordFiltering(['OLED TV'], 'OLED TV Halterung für die Wand')).toBe(true);
+            expect(testWordFiltering(['OLED TV'], 'SAMSUNG OLEDGQ77S95D OLED TV 77 Zoll')).toBe(true);
+        });
+
+        it('should handle TV technology variations', () => {
+            expect(testWordFiltering(['OLED'], 'LG OLED42C47LA TV 42" (106 cm) OLED TV')).toBe(true);
+            expect(testWordFiltering(['QLED-TV'], 'Samsung QLED-TV 55 Zoll')).toBe(true);
+            expect(testWordFiltering(['QLED TV'], 'Samsung QLED-TV 55 Zoll')).toBe(false);
+            expect(testWordFiltering(['Neo QLED'], 'Samsung Neo QLED 4K Fernseher')).toBe(true);
+        });
+        
+        it('should not match partial TV technology terms', () => {
+            expect(testWordFiltering(['OLED TV'], 'OLED-Technologie in einem Smartphone')).toBe(false);
+            expect(testWordFiltering(['QLED'], 'QLED-ähnliche Bildqualität')).toBe(true);
+            expect(testWordFiltering(['LED TV'], 'OLED TVs im Vergleich')).toBe(false);
+        });
+    });
+    describe('flo test', () => {
+        it('flo test', () => {
+            expect(testWordFiltering(['PC Netzteil'], 'DeepCool PX-G Series PX1200G 1200W ATX 3.0 PC Netzteil')).toBe(true);
+        });
+    });
+    describe('flo test2', () => {
+        it('flo test2', () => {
+            expect(testWordFiltering(['Omega 3'], 'omega3zone Omega 3 Öl (Prime Spar-Abo)')).toBe(true);
+            expect(testWordFiltering(['Omega-3'], 'omega3zone Omega 3 Öl (Prime Spar-Abo)')).toBe(false);
+            expect(testWordFiltering(['Omega 3'], 'omega3zone Omega-3 Öl (Prime Spar-Abo)')).toBe(false);
+            expect(testWordFiltering(['Omega-3'], 'omega3zone Omega-3 Öl (Prime Spar-Abo)')).toBe(true);
+        });
+    });
+});
