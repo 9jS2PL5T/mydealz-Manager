@@ -1,5 +1,4 @@
-### <img src="https://greasyfork.org/vite/assets/blacklogo96-CxYTSM_T.png" alt="GreasyFork" width="20" height="20"> [Installation via Greasyfork](https://greasyfork.org/de/scripts/522038-mydealz-manager)
-### [Installation via Greasyfork](https://greasyfork.org/de/scripts/522038-mydealz-manager)  
+### <img src="https://greasyfork.org/vite/assets/blacklogo96-CxYTSM_T.png" alt="GreasyFork" width="40" height="40"> [Installation via Greasyfork](https://greasyfork.org/de/scripts/522038-mydealz-manager)
 ### [myDealz Thread](https://www.mydealz.de/diskussion/tampermonkey-script-fur-mydealz-2299700)  
 ### [![diskussion auf mydealz](https://www.mydealz.de/assets/img/logo/default-dark_d4804.svg)](https://github.com/9jS2PL5T/mydealz-Manager/tree/main/andere%20myDealz%20Projekte)  
 
