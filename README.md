@@ -1,4 +1,4 @@
-### [![Der Mydealz Manager – deine persönliche Deal-Zentrale](https://greasyfork.org/vite/assets/blacklogo96-CxYTSM_T.png)](https://greasyfork.org/de/scripts/522038-der-mydealz-manager-deine-pers%C3%B6nliche-deal-zentrale) [**Der Mydealz Manager – deine persönliche Deal-Zentrale**](https://greasyfork.org/de/scripts/522038-der-mydealz-manager-deine-pers%C3%B6nliche-deal-zentrale)  
+### [![Der Mydealz Manager – deine persönliche Deal-Zentrale](https://greasyfork.org/vite/assets/blacklogo96-CxYTSM_T.png)](https://greasyfork.org/de/scripts/522038-der-mydealz-manager-deine-pers%C3%B6nliche-deal-zentrale) [**Installation via Greasyfork**](https://greasyfork.org/de/scripts/522038-der-mydealz-manager-deine-pers%C3%B6nliche-deal-zentrale)  
 ### [myDealz Thread](https://github.com/9jS2PL5T/mydealz-Manager/tree/main/andere%20myDealz%20Projekte)  
 ### [![Tampermonkey Script für Mydealz Update](https://www.mydealz.de/assets/img/emojis/blank_55083.svg)](https://www.mydealz.de/diskussion/tampermonkey-script-fur-mydealz-2299700) [**Tampermonkey Script für Mydealz Update**](https://www.mydealz.de/diskussion/tampermonkey-script-fur-mydealz-2299700)  
 
