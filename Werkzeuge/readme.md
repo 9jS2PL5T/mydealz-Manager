@@ -27,10 +27,11 @@
 |---|---|---|---|---|
 | ![Italien](https://flagcdn.com/60x45/it.png)<br>[pepper.it (Italien)](https://www.pepper.it) | ![Brasilien](https://flagcdn.com/60x45/br.png)<br>[pelando.com.br (Brasilien)](https://www.pelando.com.br) | ![Russland](https://flagcdn.com/60x45/ru.png)<br>[pepper.ru (Russland)](https://www.pepper.ru) | ![Südkorea](https://flagcdn.com/60x45/kr.png)<br>[pepper.co.kr (Südkorea)](https://www.pepper.co.kr) | ![Niederlande](https://flagcdn.com/60x45/nl.png)<br>[pepper.nl (Niederlande)](https://nl.pepper.com) |
 | ![Argentinien](https://flagcdn.com/60x45/ar.png)<br>[buenosdeals.com (Argentinien)](https://www.buenosdeals.com) | ![Singapur](https://flagcdn.com/60x45/sg.png)<br>[pelando.sg (Singapur)](https://www.pelando.sg) | ![Mexiko](https://flagcdn.com/60x45/mx.png)<br>[promosdescuentos.com (Spanien/Mexiko)](https://www.promosdescuentos.com) | ![Spanien](https://flagcdn.com/60x45/es.png)<br>[pepper.es (Spanien)](https://www.pepper.com/es) | ![Indien](https://flagcdn.com/60x45/in.png)<br>[desidime.com (Indien)](https://www.desidime.com) |
+  
 
+  
 
-
-
+## andere Social Shopping Plattformen
 | ![Australien](https://flagcdn.com/60x45/au.png)<br>[ozbargain.com.au (Australien)](https://www.ozbargain.com.au) | ![Australien](https://flagcdn.com/60x45/au.png)<br>[topbargains.com.au (Australien)](https://www.topbargains.com.au) | ![Australien](https://flagcdn.com/60x45/au.png)<br>[scoopon.com.au (Australien)](https://www.scoopon.com.au) | ![Australien](https://flagcdn.com/60x45/au.png)<br>[mydeal.com.au (Australien)](https://www.mydeal.com.au) | ![Neuseeland](https://flagcdn.com/60x45/nz.png)<br>[groupon.co.nz (Neuseeland)](https://www.groupon.co.nz) |
 |---|---|---|---|---|
 | ![USA](https://flagcdn.com/60x45/us.png)<br>[slickdeals.net (USA)](https://slickdeals.net) | ![USA](https://flagcdn.com/60x45/us.png)<br>[dealnews.com (USA)](https://www.dealnews.com) | ![USA](https://flagcdn.com/60x45/us.png)<br>[bradsdeals.com (USA)](https://www.bradsdeals.com) | ![Großbritannien](https://flagcdn.com/60x45/gb.png)<br>[hotukdeals.com (UK)](https://www.hotukdeals.com) | ![Frankreich](https://flagcdn.com/60x45/fr.png)<br>[dealabs.com (Frankreich)](https://www.dealabs.com) |
