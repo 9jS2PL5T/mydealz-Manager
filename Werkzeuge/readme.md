@@ -29,4 +29,18 @@
 [![UK](https://flagcdn.com/36x27/gb.png)](https://www.hotukdeals.com)        
 [![Polen](https://flagcdn.com/36x27/pl.png)](https://www.pepper.pl)        
 [![Schweden](https://flagcdn.com/36x27/se.png)](https://www.pepper.se)        
-[![Österreich](https://flagcdn.com/36x27/at.png)](https://www.preisjaeger.at)      
+[![Österreich](https://flagcdn.com/36x27/at.png)](https://www.preisjaeger.at)   
+https://nl.pepper.com/
+
+
+<h2>🌍 Mydealz in anderen Ländern</h2>
+<p>
+  <a href="https://www.mydealz.it"><img src="https://flagcdn.com/36x27/it.png" alt="Italien"> Italien</a> &nbsp;
+  <a href="https://www.mydealz.es"><img src="https://flagcdn.com/36x27/es.png" alt="Spanien"> Spanien</a> &nbsp;
+  <a href="https://www.mydealz.fr"><img src="https://flagcdn.com/36x27/fr.png" alt="Frankreich"> Frankreich</a> &nbsp;
+  <a href="https://www.hotukdeals.com"><img src="https://flagcdn.com/36x27/gb.png" alt="UK"> UK</a> &nbsp;
+  <a href="https://www.pepper.pl"><img src="https://flagcdn.com/36x27/pl.png" alt="Polen"> Polen</a> &nbsp;
+  <a href="https://www.pepper.se"><img src="https://flagcdn.com/36x27/se.png" alt="Schweden"> Schweden</a> &nbsp;
+  <a href="https://www.preisjaeger.at"><img src="https://flagcdn.com/36x27/at.png" alt="Österreich"> Österreich</a> &nbsp;
+  <a href="https://nl.pepper.com"><img src="https://flagcdn.com/36x27/nl.png" alt="Niederlande"> Niederlande</a>
+</p>
