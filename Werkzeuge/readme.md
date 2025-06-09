@@ -22,55 +22,9 @@
 🧭 [Überblick und Aufbau der Chrome Developer-Tools](https://kulturbanause.de/blog/die-chrome-entwicklertools-devtools-fuer-designer-und-einsteiger/#h-uberblick-und-aufbau-der-chrome-developer-tools)  
 📋 [Console – Übersicht ](https://developer.chrome.com/docs/devtools/console?hl=de)
   
-<h2>🌍 Mydealz in anderen Ländern</h2>
-<div style="display: flex; flex-wrap: wrap; gap: 20px;">
-  <div style="text-align: center;">
-    <a href="https://www.mydealz.it">
-      <img src="https://flagcdn.com/60x45/it.png" alt="Italien">
-      <div>Italien</div>
-    </a>
-  </div>
-  <div style="text-align: center;">
-    <a href="https://www.mydealz.es">
-      <img src="https://flagcdn.com/60x45/es.png" alt="Spanien">
-      <div>Spanien</div>
-    </a>
-  </div>
-  <div style="text-align: center;">
-    <a href="https://www.mydealz.fr">
-      <img src="https://flagcdn.com/60x45/fr.png" alt="Frankreich">
-      <div>Frankreich</div>
-    </a>
-  </div>
-  <div style="text-align: center;">
-    <a href="https://www.hotukdeals.com">
-      <img src="https://flagcdn.com/60x45/gb.png" alt="UK">
-      <div>UK</div>
-    </a>
-  </div>
-  <div style="text-align: center;">
-    <a href="https://www.pepper.pl">
-      <img src="https://flagcdn.com/60x45/pl.png" alt="Polen">
-      <div>Polen</div>
-    </a>
-  </div>
-  <div style="text-align: center;">
-    <a href="https://www.pepper.se">
-      <img src="https://flagcdn.com/60x45/se.png" alt="Schweden">
-      <div>Schweden</div>
-    </a>
-  </div>
-  <div style="text-align: center;">
-    <a href="https://www.preisjaeger.at">
-      <img src="https://flagcdn.com/60x45/at.png" alt="Österreich">
-      <div>Österreich</div>
-    </a>
-  </div>
-  <div style="text-align: center;">
-    <a href="https://nl.pepper.com">
-      <img src="https://flagcdn.com/60x45/nl.png" alt="Niederlande">
-      <div>Niederlande</div>
-    </a>
-  </div>
-</div>
+### 🌍 Mydealz in anderen Ländern
 
+| ![Italien](https://flagcdn.com/60x45/it.png)<br>[Italien](https://www.mydealz.it) | ![Spanien](https://flagcdn.com/60x45/es.png)<br>[Spanien](https://www.mydealz.es) | ![Frankreich](https://flagcdn.com/60x45/fr.png)<br>[Frankreich](https://www.mydealz.fr) |
+|---|---|---|
+| ![UK](https://flagcdn.com/60x45/gb.png)<br>[UK](https://www.hotukdeals.com) | ![Polen](https://flagcdn.com/60x45/pl.png)<br>[Polen](https://www.pepper.pl) | ![Schweden](https://flagcdn.com/60x45/se.png)<br>[Schweden](https://www.pepper.se) |
+| ![Österreich](https://flagcdn.com/60x45/at.png)<br>[Österreich](https://www.preisjaeger.at) | ![Niederlande](https://flagcdn.com/60x45/nl.png)<br>[Niederlande](https://nl.pepper.com) |  |
