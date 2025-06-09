@@ -1,6 +1,7 @@
 ### <img src="https://greasyfork.org/vite/assets/blacklogo96-CxYTSM_T.png" alt="GreasyFork" width="60" height="60"> [installation via Greasyfork](https://greasyfork.org/de/scripts/522038-mydealz-manager)
 ### [myDealz Thread](https://github.com/9jS2PL5T/mydealz-Manager/tree/main/andere%20myDealz%20Projekte)  
-### [![diskussion auf mydealz](https://www.mydealz.de/assets/img/logo/default-dark_d4804.svg)](https://www.mydealz.de/diskussion/tampermonkey-script-fur-mydealz-2299700)  
+### [![diskussion auf mydealz](https://www.mydealz.de/assets/img/logo/default-dark_d4804.svg)](https://www.mydealz.de/diskussion/tampermonkey-script-fur-mydealz-2299700) Diskussion zu "Tampermonkey Script für Mydealz Update"
+ 
 
 
 
