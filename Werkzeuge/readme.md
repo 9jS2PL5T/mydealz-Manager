@@ -22,7 +22,7 @@
 🧭 [Überblick und Aufbau der Chrome Developer-Tools](https://kulturbanause.de/blog/die-chrome-entwicklertools-devtools-fuer-designer-und-einsteiger/#h-uberblick-und-aufbau-der-chrome-developer-tools)  
 📋 [Console – Übersicht ](https://developer.chrome.com/docs/devtools/console?hl=de)
   
-
+## Pepper/ Global Savings
 | ![Deutschland](https://flagcdn.com/60x45/de.png)<br>[mydealz.de (Deutschland)](https://www.mydealz.de) | ![Österreich](https://flagcdn.com/60x45/at.png)<br>[preisjaeger.at (Österreich)](https://www.preisjaeger.at) | ![UK](https://flagcdn.com/60x45/gb.png)<br>[hotukdeals.com (UK)](https://www.hotukdeals.com) | ![Frankreich](https://flagcdn.com/60x45/fr.png)<br>[dealabs.com (Frankreich)](https://www.dealabs.com) | ![Polen](https://flagcdn.com/60x45/pl.png)<br>[pepper.pl (Polen)](https://www.pepper.pl) |
 |---|---|---|---|---|
 | ![Italien](https://flagcdn.com/60x45/it.png)<br>[pepper.it (Italien)](https://www.pepper.it) | ![Brasilien](https://flagcdn.com/60x45/br.png)<br>[pelando.com.br (Brasilien)](https://www.pelando.com.br) | ![Russland](https://flagcdn.com/60x45/ru.png)<br>[pepper.ru (Russland)](https://www.pepper.ru) | ![Südkorea](https://flagcdn.com/60x45/kr.png)<br>[pepper.co.kr (Südkorea)](https://www.pepper.co.kr) | ![Niederlande](https://flagcdn.com/60x45/nl.png)<br>[pepper.nl (Niederlande)](https://nl.pepper.com) |
@@ -31,19 +31,8 @@
 
 
 
-
-
-| Plattform        | Region      | Besonderheit                            | URL                                |
-|------------------|-------------|------------------------------------------|------------------------------------|
-| OzBargain        | Australien  | Community-Deals, Upvotes & Reviews       | https://www.ozbargain.com.au       |
-| TopBargains      | Australien  | 300k+ Mitglieder, 5k+ Händler           | https://www.topbargains.com.au(?) |
-| Buckscoop        | Australien  | Coupon- und Dealbewertung                |https://www.buckscoop.com.au/|
-| Lasoo            | Australien  | Lokales Shopping & Filterungen           |https://www.lasoo.com.au/|
-| Bargain Avenue   | Australien  | Heart-of-Couponing Community             |https://bargainavenue.com.au/|
-| Scoopon          | Australien/NZ | Erlebnis-Deals & Gutscheine             | https://www.scoopon.com.au (bzw .co.nz) |
-| MyDeal           | Australien  | Haushaltsartikel & Möbel                | https://www.mydeal.com.au         |
-| Groupon AU/NZ    | Australien/NZ | Erlebnis-Rabatte                        | https://www.groupon.com.au / nz   |
-| Slickdeals       | USA         | Tech-Deals, Community-Sharing           | https://slickdeals.net            |
-| DealNews         | USA         | Daily Deals, Preisalarme                | https://www.dealnews.com          |
-| Brad’s Deals     | USA         | Coupon-Curation & Gutscheine            | https://www.bradsdeals.com        |
+| ![Australien](https://flagcdn.com/60x45/au.png)<br>[ozbargain.com.au (Australien)](https://www.ozbargain.com.au) | ![Australien](https://flagcdn.com/60x45/au.png)<br>[topbargains.com.au (Australien)](https://www.topbargains.com.au) | ![Australien](https://flagcdn.com/60x45/au.png)<br>[scoopon.com.au (Australien)](https://www.scoopon.com.au) | ![Australien](https://flagcdn.com/60x45/au.png)<br>[mydeal.com.au (Australien)](https://www.mydeal.com.au) | ![Neuseeland](https://flagcdn.com/60x45/nz.png)<br>[groupon.co.nz (Neuseeland)](https://www.groupon.co.nz) |
+|---|---|---|---|---|
+| ![USA](https://flagcdn.com/60x45/us.png)<br>[slickdeals.net (USA)](https://slickdeals.net) | ![USA](https://flagcdn.com/60x45/us.png)<br>[dealnews.com (USA)](https://www.dealnews.com) | ![USA](https://flagcdn.com/60x45/us.png)<br>[bradsdeals.com (USA)](https://www.bradsdeals.com) | ![Großbritannien](https://flagcdn.com/60x45/gb.png)<br>[hotukdeals.com (UK)](https://www.hotukdeals.com) | ![Frankreich](https://flagcdn.com/60x45/fr.png)<br>[dealabs.com (Frankreich)](https://www.dealabs.com) |
+| ![Spanien](https://flagcdn.com/60x45/es.png)<br>[cuponation.es (Spanien)](https://www.cuponation.es) | ![Brasilien](https://flagcdn.com/60x45/br.png)<br>[pelando.com.br (Brasilien)](https://www.pelando.com.br) | ![Polen](https://flagcdn.com/60x45/pl.png)<br>[pepper.pl (Polen)](https://www.pepper.pl) | ![Italien](https://flagcdn.com/60x45/it.png)<br>[pepper.it (Italien)](https://www.pepper.it) | ![Niederlande](https://flagcdn.com/60x45/nl.png)<br>[kortingscode.nl (Niederlande)](https://www.kortingscode.nl) |
 
