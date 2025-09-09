@@ -84,6 +84,7 @@ Funktionen
 
 
 <img width="932" height="224" alt="grafik" src="https://github.com/user-attachments/assets/13c676e0-0067-4f27-92a0-0281e28eb4c3" />
+
 ![grafik](https://github.com/user-attachments/assets/6506adca-75a5-49b0-ae1a-d85c55a2439b)
 ![grafik](https://github.com/user-attachments/assets/477abafe-6d4d-4069-9548-ec41081b2e0f)
 ![grafik](https://github.com/user-attachments/assets/aba4baa1-de27-49d5-ab5b-344cacc45265)
