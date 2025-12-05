@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         mydealz Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.15.0
+// @version      1.17.2_Arbeitsversion
 // @description  Deals gezielt ausblenden mittels X Button, Filtern nach Händlern und Wörtern im Titel. Teure und kalte Deals ausblenden.
 // @author       Flo (https://www.mydealz.de/profile/Basics0119) (https://github.com/9jS2PL5T) & Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister) (https://github.com/grapefruit89)
 // @license      MIT
@@ -16,9 +16,331 @@
 // ==/UserScript==
 
 // Versions-Änderungen
-// ADD: Drag & Drop für SettingsUI
+// 2025-12-04 - v1.17.2
+// FIX: Beim Update des Scripts wurden manche gesetzten Einstellungen nicht korrekt übernommen
+// ADD: Wortfilter unterstützt jetzt Wildcards (*) für flexible Teilmatches im Titel
 
 //#region --- 1. Initialisierung und Grundeinstellungen ---
+
+// ===== Debug-Konfiguration =====
+// Zentraler Debug-Toggle - bei Bedarf auf true setzen
+const DEBUG = {
+    hideMatchingMerchantNames: false,  // Debug-Logs für Händlernamen-Feature
+    priceFilter: false,                // Debug-Logs für Preis-Filter
+    userBlocking: false,               // Debug-Logs für User-Blocking
+    backup: false,                     // Debug-Logs für Backup/Restore
+    criticalErrors: false,             // Warnt bei fehlgeschlagenen Selektoren
+
+    // Performance Monitoring (granular)
+    performance: {
+        enabled: false,              // Master-Toggle für alle Performance-Logs
+        observer: false,             // MutationObserver Callbacks
+        processing: false,           // processArticles() Durchläufe
+        filtering: false,            // Filter-Operationen (Wort/Händler/Preis)
+        caching: false,              // Cache-Hits/Misses
+        domManipulation: false,      // DOM-Updates (Titel, Verstecken)
+        timing: false,               // Detaillierte Timing-Messungen
+        summary: false,              // Performance-Zusammenfassung
+    },
+};
+
+// Initial Debug Check
+if (DEBUG.performance.enabled || DEBUG.userBlocking || DEBUG.backup || DEBUG.hideMatchingMerchantNames || DEBUG.priceFilter || DEBUG.criticalErrors) {
+    console.log('[MDM] Script loaded, DEBUG flags:', DEBUG);
+}
+
+// ===== Performance-Tracking-System =====
+class PerformanceTracker {
+    constructor() {
+        this.metrics = {
+            observer: { calls: 0, totalTime: 0, lastCall: null },
+            processArticles: { calls: 0, totalTime: 0, articlesProcessed: 0, lastCall: null },
+            filtering: {
+                wordFilter: { calls: 0, totalTime: 0, hits: 0 },
+                merchantFilter: { calls: 0, totalTime: 0, hits: 0 },
+                priceFilter: { calls: 0, totalTime: 0, hits: 0 },
+            },
+            caching: { hits: 0, misses: 0, size: 0 },
+            domUpdates: { titleChanges: 0, hideActions: 0, showActions: 0 },
+        };
+        this.timers = new Map();
+        // Batch-Tracking für aggregierte Logs
+        this.currentBatch = {
+            caching: { hits: 0, misses: 0, dealIds: { hits: [], misses: [] } },
+            domUpdates: { hidden: 0, shown: 0, titleChanges: 0 },
+            filtering: { wordMatches: 0, priceExceeded: 0 }
+        };
+    }
+
+    // Starte einen Timer
+    start(label) {
+        if (!DEBUG.performance.enabled) return;
+        this.timers.set(label, performance.now());
+    }
+
+    // Beende einen Timer und gib die Dauer zurück
+    end(label) {
+        if (!DEBUG.performance.enabled) return 0;
+        const startTime = this.timers.get(label);
+        if (!startTime) return 0;
+        const duration = performance.now() - startTime;
+        this.timers.delete(label);
+        return duration;
+    }
+
+    // Logge eine Metrik
+    log(category, subcategory, data = {}) {
+        if (!DEBUG.performance.enabled) return;
+
+        const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+        const logData = {
+            time: timestamp,
+            category,
+            subcategory,
+            ...data
+        };
+
+        // Kategorie-spezifisches Logging
+        if (DEBUG.performance[category]) {
+            console.log(`[Performance ${timestamp}] ${category}/${subcategory}:`, logData);
+        }
+    }
+
+    // Aktualisiere Metriken
+    update(path, value) {
+        const keys = path.split('.');
+        let current = this.metrics;
+        for (let i = 0; i < keys.length - 1; i++) {
+            current = current[keys[i]];
+        }
+        const lastKey = keys[keys.length - 1];
+        if (typeof current[lastKey] === 'number') {
+            current[lastKey] += value;
+        } else {
+            current[lastKey] = value;
+        }
+    }
+
+    // Zeige Performance-Zusammenfassung
+    showSummary() {
+        if (!DEBUG.performance.enabled || !DEBUG.performance.summary) return;
+
+        console.group('📊 Performance Summary - mydealz Manager');
+
+        // Observer Stats
+        const obs = this.metrics.observer;
+        if (obs.calls > 0) {
+            console.log('🔍 Observer:', {
+                calls: obs.calls,
+                avgTime: `${(obs.totalTime / obs.calls).toFixed(2)}ms`,
+                totalTime: `${obs.totalTime.toFixed(2)}ms`,
+            });
+        }
+
+        // Processing Stats
+        const proc = this.metrics.processArticles;
+        if (proc.calls > 0) {
+            console.log('⚙️ Article Processing:', {
+                runs: proc.calls,
+                articlesProcessed: proc.articlesProcessed,
+                avgArticlesPerRun: (proc.articlesProcessed / proc.calls).toFixed(1),
+                avgTime: `${(proc.totalTime / proc.calls).toFixed(2)}ms`,
+                totalTime: `${proc.totalTime.toFixed(2)}ms`,
+            });
+        }
+
+        // Filter Stats
+        const filters = this.metrics.filtering;
+        console.log('🔎 Filtering:', {
+            wordFilter: {
+                calls: filters.wordFilter.calls,
+                hits: filters.wordFilter.hits,
+                hitRate: filters.wordFilter.calls > 0
+                    ? `${((filters.wordFilter.hits / filters.wordFilter.calls) * 100).toFixed(1)}%`
+                    : '0%',
+                avgTime: filters.wordFilter.calls > 0
+                    ? `${(filters.wordFilter.totalTime / filters.wordFilter.calls).toFixed(3)}ms`
+                    : '0ms'
+            },
+            merchantFilter: {
+                calls: filters.merchantFilter.calls,
+                hits: filters.merchantFilter.hits,
+                hitRate: filters.merchantFilter.calls > 0
+                    ? `${((filters.merchantFilter.hits / filters.merchantFilter.calls) * 100).toFixed(1)}%`
+                    : '0%'
+            },
+            priceFilter: {
+                calls: filters.priceFilter.calls,
+                hits: filters.priceFilter.hits,
+                hitRate: filters.priceFilter.calls > 0
+                    ? `${((filters.priceFilter.hits / filters.priceFilter.calls) * 100).toFixed(1)}%`
+                    : '0%'
+            }
+        });
+
+        // Cache Stats
+        const cache = this.metrics.caching;
+        const cacheTotal = cache.hits + cache.misses;
+        if (cacheTotal > 0) {
+            console.log('💾 Cache:', {
+                hits: cache.hits,
+                misses: cache.misses,
+                hitRate: `${((cache.hits / cacheTotal) * 100).toFixed(1)}%`,
+                size: cache.size,
+            });
+        }
+
+        // DOM Updates
+        const dom = this.metrics.domUpdates;
+        console.log('🎨 DOM Updates:', {
+            titleChanges: dom.titleChanges,
+            hidden: dom.hideActions,
+            shown: dom.showActions,
+        });
+
+        console.groupEnd();
+    }
+
+    // Setze Metriken zurück
+    reset() {
+        this.metrics = {
+            observer: { calls: 0, totalTime: 0, lastCall: null },
+            processArticles: { calls: 0, totalTime: 0, articlesProcessed: 0, lastCall: null },
+            filtering: {
+                wordFilter: { calls: 0, totalTime: 0, hits: 0 },
+                merchantFilter: { calls: 0, totalTime: 0, hits: 0 },
+                priceFilter: { calls: 0, totalTime: 0, hits: 0 },
+            },
+            caching: { hits: 0, misses: 0, size: 0 },
+            domUpdates: { titleChanges: 0, hideActions: 0, showActions: 0 },
+        };
+        this.timers.clear();
+        console.log('[Performance] ♻️ Metrics reset');
+    }
+
+    // Batch-Tracking Methoden
+    resetBatch() {
+        this.currentBatch = {
+            caching: { hits: 0, misses: 0, dealIds: { hits: [], misses: [] } },
+            domUpdates: { hidden: 0, shown: 0, titleChanges: 0 },
+            filtering: { wordMatches: 0, priceExceeded: 0 }
+        };
+    }
+
+    logBatch() {
+        if (!DEBUG.performance.enabled) return;
+        const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+
+        // Cache Batch Log
+        if (DEBUG.performance.caching && (this.currentBatch.caching.hits > 0 || this.currentBatch.caching.misses > 0)) {
+            console.log(`[Performance ${timestamp}] caching/batch:`, {
+                hits: this.currentBatch.caching.hits,
+                misses: this.currentBatch.caching.misses,
+                hitRate: `${((this.currentBatch.caching.hits / (this.currentBatch.caching.hits + this.currentBatch.caching.misses)) * 100).toFixed(1)}%`,
+                sampleHits: this.currentBatch.caching.dealIds.hits.slice(0, 3),
+                sampleMisses: this.currentBatch.caching.dealIds.misses.slice(0, 3)
+            });
+        }
+
+        // DOM Updates Batch Log
+        if (DEBUG.performance.domManipulation && (this.currentBatch.domUpdates.hidden > 0 || this.currentBatch.domUpdates.shown > 0 || this.currentBatch.domUpdates.titleChanges > 0)) {
+            console.log(`[Performance ${timestamp}] domManipulation/batch:`, {
+                hidden: this.currentBatch.domUpdates.hidden,
+                shown: this.currentBatch.domUpdates.shown,
+                titleChanges: this.currentBatch.domUpdates.titleChanges
+            });
+        }
+
+        // Filtering Batch Log
+        if (DEBUG.performance.filtering && (this.currentBatch.filtering.wordMatches > 0 || this.currentBatch.filtering.priceExceeded > 0)) {
+            console.log(`[Performance ${timestamp}] filtering/batch:`, {
+                wordMatches: this.currentBatch.filtering.wordMatches,
+                priceExceeded: this.currentBatch.filtering.priceExceeded
+            });
+        }
+
+        this.resetBatch();
+    }
+}
+
+// Globale Performance-Tracker-Instanz
+const perfTracker = new PerformanceTracker();
+
+// Performance-Summary alle 30 Sekunden (wenn enabled)
+if (DEBUG.performance.enabled && DEBUG.performance.summary) {
+    setInterval(() => {
+        perfTracker.showSummary();
+        // Optional: Metriken nach jeder Summary zurücksetzen
+        // perfTracker.reset();
+    }, 30000);
+}
+
+// === Performance-Helper-Funktionen ===
+// Manuelles Abrufen der Performance-Summary über Console
+(function() {
+    'use strict';
+
+    // Definiere Performance-API am globalen window-Objekt
+    const api = {
+        summary: () => perfTracker.showSummary(),
+        reset: () => perfTracker.reset(),
+        enable: () => {
+            DEBUG.performance.enabled = false;
+            console.log('✅ Performance-Tracking aktiviert');
+        },
+        disable: () => {
+            DEBUG.performance.enabled = false;
+            console.log('❌ Performance-Tracking deaktiviert');
+        },
+        enableAll: () => {
+            Object.keys(DEBUG.performance).forEach(key => {
+                if (typeof DEBUG.performance[key] === 'boolean') {
+                    DEBUG.performance[key] = true;
+                }
+            });
+            console.log('✅ Alle Performance-Logs aktiviert');
+        },
+        disableAll: () => {
+            Object.keys(DEBUG.performance).forEach(key => {
+                if (typeof DEBUG.performance[key] === 'boolean') {
+                    DEBUG.performance[key] = false;
+                }
+            });
+            console.log('❌ Alle Performance-Logs deaktiviert');
+        },
+        get config() {
+            return DEBUG.performance;
+        },
+        // Hilfsfunktion zum Aktivieren spezifischer Kategorien
+        enableCategory: (category) => {
+            if (DEBUG.performance.hasOwnProperty(category)) {
+                DEBUG.performance[category] = true;
+                console.log(`✅ ${category} aktiviert`);
+            } else {
+                console.warn(`❌ Kategorie "${category}" nicht gefunden`);
+            }
+        },
+        // Zeige verfügbare Kategorien
+        categories: () => {
+            console.log('📋 Verfügbare Performance-Kategorien:');
+            Object.keys(DEBUG.performance).forEach(key => {
+                console.log(`  - ${key}: ${DEBUG.performance[key]}`);
+            });
+        }
+    };
+
+    // Setze am globalen window-Objekt
+    if (typeof unsafeWindow !== 'undefined') {
+        unsafeWindow.mdmPerformance = api;
+    } else {
+        window.mdmPerformance = api;
+    }
+
+    if (DEBUG.performance.enabled) {
+        console.log('📊 Performance-Tracking verfügbar: window.mdmPerformance');
+        console.log('   Befehle: .enable(), .disable(), .summary(), .reset(), .categories()');
+    }
+})();
 
 // ===== Konstanten und Konfiguration =====
 // --- Storage Keys ---
@@ -26,19 +348,296 @@ const VERSION_PREFIX = 'mdm_version_';
 const HIDDEN_DEALS_KEY = 'hiddenDeals';
 const HIDE_COLD_DEALS_KEY = 'hideColdDeals';
 const MAX_PRICE_KEY = 'maxPrice';
-const LAST_HIDDEN_DEAL_SHOWN = 'lastHiddenDealShown';
 const PREFERRED_SORT_KEY = 'mydealz_preferred_sort';
+const PREFERRED_TIMEFRAME_KEY = 'mydealz_preferred_timeframe';
+const LAST_VERSION_KEY = 'mdm_last_version';
+const CHANGELOG_URL = 'https://greasyfork.org/de/scripts/522038-mydealz-manager/versions';
+const UPDATE_NOTICE_SHOWN_KEY = 'mdm_update_notice_shown';
 
 // --- Selektoren ---
 const ARTICLE_SELECTOR = '.thread--deal, .thread--type--list';
 const MERCHANT_PAGE_SELECTOR = '.merchant-banner';
+
+const FEED_CONTAINER_SELECTORS = [
+    '[data-t="threadList"]',
+    '.threadList',
+    '.thread-list',
+    '.itemList',
+    '#content'
+];
+
+// Text Normalisierung Map für Sonderzeichen
+const CHAR_NORMALIZATION_MAP = {
+    'ä': 'a', 'á': 'a', 'à': 'a', 'â': 'a', 'ã': 'a',
+    'ö': 'o', 'ó': 'o', 'ò': 'o', 'ô': 'o', 'õ': 'o',
+    'ü': 'u', 'ú': 'u', 'ù': 'u', 'û': 'u',
+    'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+    'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+    'ý': 'y', 'ÿ': 'y',
+    'ñ': 'n',
+    'ß': 'ss'
+};
+
+function normalizeForSearch(text) {
+    if (!text) return '';
+
+    // Zu Lowercase konvertieren
+    let normalized = text.toLowerCase();
+
+    // Non-breaking Spaces und andere unsichtbare Zeichen zu normalen Spaces konvertieren
+    // Dies behandelt &nbsp; (\u00A0) und andere Unicode-Leerzeichen
+    normalized = normalized.replace(/[\u00A0\u202F\u2000-\u200B\u205F\u3000]/g, ' ');
+
+    // Alle Apostroph-Varianten zu normalem Apostroph konvertieren
+    // ' (U+2018 Left Single Quotation), ' (U+2019 Right Single Quotation), ` (U+0060 Grave Accent)
+    normalized = normalized.replace(/[\u2018\u2019\u0060]/g, "'");
+
+    // Sonderzeichen normalisieren
+    normalized = normalized.split('').map(char => CHAR_NORMALIZATION_MAP[char] || char).join('');
+
+    // Unicode normalisieren (NFD) und dann alle diakritischen Zeichen entfernen
+    normalized = normalized.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    // Mehrfache Leerzeichen zu einem Leerzeichen reduzieren
+    normalized = normalized.replace(/\s+/g, ' ').trim();
+
+    return normalized;
+}
+
+function findDealContainer() {
+    for (const selector of FEED_CONTAINER_SELECTORS) {
+        const element = document.querySelector(selector);
+        if (element) return element;
+    }
+
+    const firstArticle = document.querySelector(ARTICLE_SELECTOR);
+    return firstArticle?.parentElement ?? null;
+}
+
+function isDealNode(node) {
+    if (!node) return false;
+
+    if (node.nodeType === 1) { // ELEMENT_NODE
+        if (node.matches?.(ARTICLE_SELECTOR)) return true;
+        if (node.querySelector?.(ARTICLE_SELECTOR)) return true;
+    }
+
+    if (node.nodeType === 11) { // DOCUMENT_FRAGMENT_NODE
+        return !!node.querySelector?.(ARTICLE_SELECTOR);
+    }
+
+    return false;
+}
+
+function mutationsAffectDeals(mutations) {
+
+    // Schnelle Prüfung ohne Array-Konvertierung
+    for (const mutation of mutations) {
+        if (mutation.type !== 'childList') continue;
+
+        // Direkte NodeList/HTMLCollection Prüfung
+        if (mutation.addedNodes.length) {
+            for (const node of mutation.addedNodes) {
+                if (isDealNode(node)) {
+                    return true;
+                }
+            }
+        }
+
+        if (mutation.removedNodes.length) {
+            for (const node of mutation.removedNodes) {
+                if (isDealNode(node)) {
+                    return true;
+                }
+            }
+        }
+
+        // Effiziente Target-Prüfung
+        const target = mutation.target;
+        if (target?.closest?.(ARTICLE_SELECTOR)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+const observerTargets = new WeakMap();
+
+function observeDealMutations(observerInstance) {
+    // Suche primär nach dem Deal-Container
+    const target = findDealContainer();
+    if (!target) return;
+
+    const currentTarget = observerTargets.get(observerInstance);
+    if (currentTarget === target) return;
+
+    // Beobachter nur neu verbinden wenn nötig
+    observerInstance.disconnect();
+    observerInstance.observe(target, {
+        childList: true,
+        subtree: true
+    });
+    observerTargets.set(observerInstance, target);
+}
 
 // --- System/Performance Konstanten ---
 const CLEANUP_TIME = 30000;
 const IS_TOUCH_DEVICE = ('ontouchstart' in window) ||
       (navigator.maxTouchPoints > 0) ||
       (navigator.msMaxTouchPoints > 0);
-const DEBUG = false;
+
+let excludeWordCache = [];
+
+let excludeMerchantsCache = {
+    ids: new Set(),
+    normalizedNames: new Set()
+};
+
+function rebuildExcludeMerchantCache(merchants) {
+    const list = Array.isArray(merchants) ? merchants : [];
+
+    excludeMerchantsCache.ids = new Set(
+        list
+            .map(merchant => merchant?.id)
+            .filter(id => id !== undefined && id !== null)
+            .map(id => String(id))
+    );
+
+    excludeMerchantsCache.normalizedNames = new Set(
+        list
+            .map(merchant => normalizeForSearch(merchant?.name || ''))
+            .filter(Boolean)
+    );
+}
+
+function getArticleMerchantInfo(article) {
+    if (!article) {
+        return { merchantId: null, merchantName: null };
+    }
+
+    const ids = new Set();
+    const dataset = article.dataset || {};
+    ['merchantId', 'threadMerchantId', 'merchantid', 'threadmerchantid'].forEach(key => {
+        if (dataset[key]) {
+            ids.add(dataset[key]);
+        }
+    });
+
+    ['data-merchant-id', 'data-thread-merchant-id', 'data-thread-merchantid'].forEach(attr => {
+        const value = article.getAttribute?.(attr);
+        if (value) {
+            ids.add(value);
+        }
+    });
+
+    const merchantLink = article.querySelector?.('a[data-t="merchantLink"]') || null;
+    if (merchantLink) {
+        const linkDataset = merchantLink.dataset || {};
+        ['merchantId', 'merchantid', 'tMerchantId', 'tmerchantid'].forEach(key => {
+            if (linkDataset[key]) {
+                ids.add(linkDataset[key]);
+            }
+        });
+
+        const href = merchantLink.getAttribute('href') || '';
+        const match = href.match(/merchant-id=(\d+)/i);
+        if (match) {
+            ids.add(match[1]);
+        }
+    }
+
+    const merchantName = merchantLink?.textContent?.trim() ||
+        article.querySelector?.('.color--text-TranslucentSecondary.size--all-xs span:last-child')?.textContent?.trim() ||
+        null;
+
+    const merchantId = ids.size ? String(Array.from(ids)[0]).trim() : null;
+
+    return {
+        merchantId: merchantId || null,
+        merchantName: merchantName || null
+    };
+}
+
+function escapeRegex(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function createExcludeWordEntry(word) {
+    if (typeof word !== 'string' || !word.trim()) return null;
+
+    const normalized = normalizeForSearch(word);
+    if (!normalized) return null;
+
+    // Wildcard-Logik: * als Platzhalter
+    if (normalized.includes('*')) {
+        // Escape Regex-Sonderzeichen außer *
+        let pattern = escapeRegex(normalized).replace(/\\\*/g, '.*');
+        // Wortgrenzen nur setzen, wenn kein * am Anfang/Ende
+        if (!normalized.startsWith('*')) pattern = '\\b' + pattern;
+        if (!normalized.endsWith('*')) pattern = pattern + '\\b';
+        const regex = new RegExp(pattern, 'i');
+        return {
+            original: word,
+            type: 'wildcard',
+            normalized,
+            regex,
+            matcher: title => regex.test(title)
+        };
+    }
+
+    if (normalized.startsWith('[') && normalized.endsWith(']')) {
+        return {
+            original: word,
+            type: 'bracket',
+            normalized,
+            matcher: title => title.includes(normalized)
+        };
+    }
+
+    if (normalized.includes('+')) {
+        return {
+            original: word,
+            type: 'plus',
+            normalized,
+            matcher: title => title.includes(normalized)
+        };
+    }
+
+    if (normalized.includes(' ') || normalized.includes('-')) {
+        const parts = normalized.split(' ').filter(Boolean);
+        const firstWord = parts[0] || normalized;
+        const firstWordRegex = new RegExp(`\b${escapeRegex(firstWord)}\b`, 'i');
+        return {
+            original: word,
+            type: 'phrase',
+            normalized,
+            firstWordRegex,
+            matcher: title => {
+                if (firstWordRegex && !firstWordRegex.test(title)) {
+                    return false;
+                }
+                return title.includes(normalized);
+            }
+        };
+    }
+
+    const regex = new RegExp(`\b${escapeRegex(normalized)}\b`, 'i');
+    return {
+        original: word,
+        type: 'simple',
+        normalized,
+        regex,
+        matcher: title => regex.test(title)
+    };
+}
+
+function rebuildExcludeWordCache(words) {
+    const list = Array.isArray(words) ? words : [];
+    excludeWordCache = list
+        .map(createExcludeWordEntry)
+        .filter(Boolean);
+}
 
 // --- Feature Flags ---
 const FEATURES = {
@@ -80,6 +679,27 @@ const FEATURES = {
     }
 })();
 
+(function notifyOnUpdate() {
+    const currentVersion = GM_info?.script?.version ?? 'unbekannt';
+
+    try {
+        const previousGMVersion = GM_getValue(LAST_VERSION_KEY, null);
+        const previousLSVersion = localStorage.getItem(LAST_VERSION_KEY);
+        const previousVersion = previousGMVersion || previousLSVersion;
+
+        // Wenn es keine vorherige Version gibt oder sich die Version geändert hat
+        if (!previousVersion || previousVersion !== currentVersion) {
+            // Setze Flag dass Update-Hinweis angezeigt werden soll
+            GM_setValue(UPDATE_NOTICE_SHOWN_KEY, false);
+        }
+
+        GM_setValue(LAST_VERSION_KEY, currentVersion);
+        localStorage.setItem(LAST_VERSION_KEY, currentVersion);
+    } catch (error) {
+        console.error('Update-Check konnte nicht ausgeführt werden:', error);
+    }
+})();
+
 // Cleanup beim Entladen der Seite
 window.addEventListener('unload', () => {
     try {
@@ -101,42 +721,73 @@ const preventAutoCloseStyle = document.createElement('style');
 preventAutoCloseStyle.textContent = ``;
 document.head.appendChild(preventAutoCloseStyle);
 
+const managerHideStyle = document.createElement('style');
+managerHideStyle.textContent = `.mydealz-manager-hidden, article[data-hidden-by-mydealz-manager="true"] { display: none !important; }`;
+document.head.appendChild(managerHideStyle);
+
 // ===== UI-Konfiguration =====
 // --- Titel-Speicher ---
 const ORIGINAL_TITLES = new Map();
 
-// --- Sidebar Elemente ---
-const SIDEBAR_ELEMENTS = {
-    banners: {
-        headerBanners: {
-            name: "Banner im Header",
-            selector: '.messages',
-            storageKey: 'hideHeaderBanners',
-            hidden: false
-        },
-        feedBanners: {
-            name: "Banner im Feed",
-            selector: '[id^="customBannerList-id-"], #eventBannerPortal',
-            storageKey: 'hideFeedBanners',
-            hidden: false
-        }
-    },
-    widgets: {
-        topDiscussions: {
-            name: "Widgets",
-            selector: '.card.card--type-vertical.listLayout-box.aGrid.card--responsive',
-            storageKey: 'hideTopDiscussionsWidget',
-            hidden: false
-        }
-    }
-};
-
 // ===== Observer-Konfiguration =====
-const observer = new MutationObserver(throttle(() => {
-    processArticles();
-    addSettingsButton();
-    addHideButtons();
-}, 250));
+let processingScheduled = false;
+
+const observer = new MutationObserver(throttle((mutations) => {
+    perfTracker.start('observer');
+    perfTracker.update('observer.calls', 1);
+
+    if (DEBUG.performance.observer) {
+        perfTracker.log('observer', 'triggered', {
+            mutationCount: mutations.length,
+            types: mutations.map(m => m.type).join(', ')
+        });
+    }
+
+    // Schnelle Vorprüfung auf relevante Änderungen
+    if (!mutations.some(m => m.type === 'childList')) {
+        const duration = perfTracker.end('observer');
+        if (DEBUG.performance.observer) {
+            perfTracker.log('observer', 'skipped-no-childList', { duration: `${duration.toFixed(2)}ms` });
+        }
+        return;
+    }
+
+    observeDealMutations(observer);
+    if (!mutationsAffectDeals(mutations)) {
+        const duration = perfTracker.end('observer');
+        if (DEBUG.performance.observer) {
+            perfTracker.log('observer', 'skipped-no-deals', { duration: `${duration.toFixed(2)}ms` });
+        }
+        return;
+    }
+
+    // Verhindere doppelte Verarbeitung
+    if (processingScheduled) {
+        const duration = perfTracker.end('observer');
+        if (DEBUG.performance.observer) {
+            perfTracker.log('observer', 'skipped-already-scheduled', { duration: `${duration.toFixed(2)}ms` });
+        }
+        return;
+    }
+
+    processingScheduled = true;
+
+    // Verzögerte Verarbeitung um mehrere Änderungen zu bündeln
+    requestAnimationFrame(() => {
+        processArticles();
+        addSettingsButton();
+        addHideButtons();
+
+        processingScheduled = false;
+
+        const duration = perfTracker.end('observer');
+        perfTracker.update('observer.totalTime', duration);
+
+        if (DEBUG.performance.observer) {
+            perfTracker.log('observer', 'completed', { duration: `${duration.toFixed(2)}ms` });
+        }
+    });
+}, 1500, { leading: true, trailing: true }));
 
 // ===== UI-Zustand =====
 // --- Hauptfenster ---
@@ -148,6 +799,7 @@ let dealThatOpenedSettings = null;
 let settingsDiv = null;
 let merchantListDiv = null;
 let wordsListDiv = null;
+let blockedUsersDiv = null;
 let uiClickOutsideHandler = null;
 
 // ===== Filter-Zustand =====
@@ -165,26 +817,29 @@ let maxPrice = parseFloat(localStorage.getItem(MAX_PRICE_KEY)) || 0;
 let suggestedWords = [];
 let suggestionClickHandler = null;
 
-// --- Letzte Aktionen ---
-let lastHiddenDeal = null; // Speichert nur den letzten ausgeblendeten Deal
-let lastHiddenDealShown = false; // Wurde der letzte ausgeblendete Deal bereits angezeigt?
-
 // ===== Menü-Commands =====
 // --- Command IDs ---
 let menuCommandId;
-let merchantCommandId;
-let backupCommandId;
 let restoreCommandId;
 
 // --- Feature-Flags ---
-let hideMatchingMerchantNames = GM_getValue('hideMatchingMerchantNames', false);
-let hideCustomBanners = GM_getValue('hideCustomBanners', false);
-let hideShareButtons = GM_getValue('hideShareButtons', false);
+// Lade hideMatchingMerchantNames mit Fallback auf localStorage
+let hideMatchingMerchantNames = GM_getValue('hideMatchingMerchantNames', null);
+if (hideMatchingMerchantNames === null) {
+    hideMatchingMerchantNames = localStorage.getItem('hideMatchingMerchantNames') === 'true';
+}
+localStorage.setItem('hideMatchingMerchantNames', hideMatchingMerchantNames.toString());
+
+// Lade hideShareButtons mit Fallback auf localStorage
+let hideShareButtons = GM_getValue('hideShareButtons', null);
+if (hideShareButtons === null) {
+    hideShareButtons = localStorage.getItem('hideShareButtons') === 'true';
+}
+localStorage.setItem('hideShareButtons', hideShareButtons.toString());
 
 // --- Temporäre Listen ---
 let recentHiddenDeals = [];
 //#endregion
-
 
 
 
@@ -386,15 +1041,16 @@ function getWordsFromTitle(deal) {
 
 
 
-
 //#region --- 3. Datenverwaltung ---
 // ===== Einstellungen laden/speichern =====
 // Laden aller gespeicherten Einstellungen
 function loadSettings() {
     // Lade Wortfilter und Händlerfilter
     excludeWords = loadExcludeWords();
+	rebuildExcludeWordCache(excludeWords);
     const merchantsData = loadExcludeMerchants();
     excludeMerchantIDs = merchantsData.map(m => m.id);
+    rebuildExcludeMerchantCache(merchantsData);
 
     // Lade Preisfilter
     maxPrice = parseFloat(GM_getValue('maxPrice', 0)) || 0;
@@ -402,101 +1058,43 @@ function loadSettings() {
     // Lade UI-Einstellungen
     hideColdDeals = GM_getValue('hideColdDeals', false);
 
-    hideMatchingMerchantNames = GM_getValue('hideMatchingMerchantNames', false);
+    // Lade hideMatchingMerchantNames mit Fallback
+    hideMatchingMerchantNames = GM_getValue('hideMatchingMerchantNames', null);
+    if (hideMatchingMerchantNames === null) {
+        hideMatchingMerchantNames = localStorage.getItem('hideMatchingMerchantNames') === 'true';
+    }
+    localStorage.setItem('hideMatchingMerchantNames', hideMatchingMerchantNames.toString());
     window.hideMatchingMerchantNames = hideMatchingMerchantNames;
 
-    // Lade Banner-Einstellung und aktualisiere basierend auf individuellen Einstellungen
-    hideCustomBanners = GM_getValue('hideCustomBanners', false);
-
-    // Wenn hideCustomBanners nicht explizit aktiviert ist, prüfe ob alle individuellen
-    // Elemente ausgeblendet sind und setze hideCustomBanners entsprechend
-    if (!hideCustomBanners) {
-        const allHidden = Object.values(SIDEBAR_ELEMENTS).every(element => element.hidden);
-        if (allHidden && Object.values(SIDEBAR_ELEMENTS).length > 0) {
-            hideCustomBanners = true;
-        }
+    // Lade Share Button Einstellung mit Fallback
+    hideShareButtons = GM_getValue('hideShareButtons', null);
+    if (hideShareButtons === null) {
+        hideShareButtons = localStorage.getItem('hideShareButtons') === 'true';
     }
-
-    window.hideCustomBanners = hideCustomBanners;
-
-    // Lade Share Button Einstellung
-    hideShareButtons = GM_getValue('hideShareButtons', false);
+    localStorage.setItem('hideShareButtons', hideShareButtons.toString());
     window.hideShareButtons = hideShareButtons;
 
     // Lade versteckte Deals
     hiddenDeals = GM_getValue('hiddenDeals', []);
 
-    // Lade letzten versteckten Deal
-    lastHiddenDeal = GM_getValue('lastHiddenDeal', null);
-    lastHiddenDealShown = GM_getValue(LAST_HIDDEN_DEAL_SHOWN, false);
-
-    // Wenn lastHiddenDeal null ist, setze auch lastHiddenDealShown auf true
-    if (!lastHiddenDeal) {
-        lastHiddenDealShown = true;
-        GM_setValue(LAST_HIDDEN_DEAL_SHOWN, true);
-    }
-
-    // Lade Banner-Status
-    Object.keys(SIDEBAR_ELEMENTS.banners).forEach(key => {
-        const element = SIDEBAR_ELEMENTS.banners[key];
-        element.hidden = GM_getValue(element.storageKey, false);
-
-        // Sofort Sichtbarkeit anwenden
-        if (element.hidden) {
-            document.querySelectorAll(element.selector).forEach(el => {
-                el.style.display = 'none';
-            });
-        }
-    });
-
     // Lade Sortierungsspeicher-Einstellung
     window.rememberSort = GM_getValue('rememberSort', true);
+    localStorage.setItem('rememberSort', window.rememberSort.toString());
 
-    const applyWidgetVisibilityOnce = () => {
-        Object.keys(SIDEBAR_ELEMENTS.widgets).forEach(key => {
-            const element = SIDEBAR_ELEMENTS.widgets[key];
-            element.hidden = GM_getValue(element.storageKey, false);
-
-            if (element.hidden) {
-                document.querySelectorAll(element.selector).forEach(el => {
-                    el.style.display = 'none';
-                });
-            }
-        });
-    };
-
-    // Einmalig ausführen mit Verzögerung für dynamische Elemente
-    setTimeout(applyWidgetVisibilityOnce, 500);
-
-    // UI Updates in einem requestAnimationFrame bündeln
-    requestAnimationFrame(() => {
-        updateCustomBannerIcon();
-        updateSidebarElementsUI();
-    });
 }
 
-const combinedObserver = new MutationObserver(throttle(() => {
-    // Prozessiere Artikel und UI
+const combinedObserver = new MutationObserver(throttle((mutations) => {
+    observeDealMutations(combinedObserver);
+    if (!mutationsAffectDeals(mutations)) return;
+
     processArticles();
     addSettingsButton();
     addHideButtons();
 
-    // Prüfe Widget-Sichtbarkeit
-    Object.keys(SIDEBAR_ELEMENTS.widgets).forEach(key => {
-        const element = SIDEBAR_ELEMENTS.widgets[key];
-        if (element.hidden) {
-            document.querySelectorAll(element.selector).forEach(el => {
-                el.style.display = 'none';
-            });
-        }
-    });
 }, 250));
 
 // Observer starten
-combinedObserver.observe(document.body, {
-    childList: true,
-    subtree: true
-});
+observeDealMutations(combinedObserver);
 
 // Storage-Synchronisation zwischen GM und localStorage
 async function syncStorage() {
@@ -524,6 +1122,7 @@ async function syncStorage() {
         GM_setValue('excludeWords', effectiveWords);
         localStorage.setItem('excludeWords', JSON.stringify(effectiveWords));
         excludeWords = effectiveWords;
+		rebuildExcludeWordCache(excludeWords);
         migrationPerformed = true;
     }
 
@@ -534,6 +1133,7 @@ async function syncStorage() {
         excludeMerchantIDs = effectiveMerchants.map(m => m.id);
         GM_setValue('excludeMerchantIDs', excludeMerchantIDs);
         localStorage.setItem('excludeMerchantsData', JSON.stringify(effectiveMerchants));
+        rebuildExcludeMerchantCache(effectiveMerchants);
         migrationPerformed = true;
     }
 
@@ -590,29 +1190,6 @@ async function syncStorage() {
         localStorage.setItem('hideShareButtons', effectiveHideShareButtons.toString());
         window.hideShareButtons = effectiveHideShareButtons;
 
-        // hideCustomBanners
-        const gmHideCustomBanners = GM_getValue('hideCustomBanners', null);
-        const lsHideCustomBanners = localStorage.getItem('hideCustomBanners') === 'true';
-        const effectiveHideCustomBanners = gmHideCustomBanners !== null ?
-              gmHideCustomBanners : lsHideCustomBanners;
-        GM_setValue('hideCustomBanners', effectiveHideCustomBanners);
-        localStorage.setItem('hideCustomBanners', effectiveHideCustomBanners.toString());
-        window.hideCustomBanners = effectiveHideCustomBanners;
-
-        // Sidebar Elements (Banner & Widgets)
-        Object.entries(SIDEBAR_ELEMENTS).forEach(([category, items]) => {
-            Object.entries(items).forEach(([key, element]) => {
-                const storageKey = element.storageKey;
-                const gmValue = GM_getValue(storageKey, null);
-                const lsValue = localStorage.getItem(storageKey) === 'true';
-
-                const effectiveValue = gmValue !== null ? gmValue : lsValue;
-                GM_setValue(storageKey, effectiveValue);
-                localStorage.setItem(storageKey, effectiveValue.toString());
-                element.hidden = effectiveValue;
-            });
-        });
-
         migrationPerformed = true;
     }
 
@@ -630,12 +1207,17 @@ function saveExcludeWords(words) {
         const lowerWord = word.toLowerCase();
         const exists = acc.some(w => w.toLowerCase() === lowerWord);
         if (!exists) {
-            acc.push(word); // Behält originale Schreibweise bei
+            acc.push(word);
         }
         return acc;
     }, []);
 
-    // Speichere nur die normalisierte Version
+    excludeWords = normalizedWords;
+    rebuildExcludeWordCache(excludeWords);
+
+    // Cache leeren wenn Filter sich ändern
+    processedDealsCache.clear();
+
     GM_setValue('excludeWords', normalizedWords);
     localStorage.setItem('excludeWords', JSON.stringify(normalizedWords));
 }
@@ -678,7 +1260,11 @@ function saveExcludeMerchants(merchantsData) {
     GM_setValue('excludeMerchantsData', validMerchants);
     localStorage.setItem('excludeMerchantsData', JSON.stringify(validMerchants));
 
+    // Cache leeren wenn Händler-Filter sich ändern
+    processedDealsCache.clear();
+
     excludeMerchantIDs = ids;
+    rebuildExcludeMerchantCache(validMerchants);
 }
 
 // Laden von Händlerfiltern
@@ -723,7 +1309,6 @@ function saveMaxPrice(price) {
 
 
 
-
 //#region --- 4. UI-System ---
 // ===== Basis UI-Funktionen =====
 
@@ -732,6 +1317,7 @@ function initUIContainers() {
     settingsDiv = document.createElement('div');
     merchantListDiv = document.createElement('div');
     wordsListDiv = document.createElement('div');
+    blockedUsersDiv = document.createElement('div');
 }
 
 function updateUITheme() {
@@ -762,27 +1348,15 @@ function updateUITheme() {
 // === UI-Komponenten ===
 // --- Dialog-Erstellung ---
 function createSettingsUI() {
-    if (isSettingsOpen) return;
+
+    // UI erstellen
+    if (isSettingsOpen) {
+        return;
+    }
     isSettingsOpen = true;
 
     // Lade versteckte Deals neu
-    const oldHiddenDeals = [...hiddenDeals]; // Copy old state
     hiddenDeals = GM_getValue('hiddenDeals', []);
-
-    // Lade versteckte Deals neu
-    hiddenDeals = GM_getValue('hiddenDeals', []);
-
-    // Konsistente Überprüfung des "already shown" Status
-    const wasAlreadyShown = GM_getValue(LAST_HIDDEN_DEAL_SHOWN, false);
-
-    // Wenn bereits angezeigt oder kein letzter Deal vorhanden, dann nicht mehr anzeigen
-    if (!lastHiddenDeal || wasAlreadyShown) {
-        lastHiddenDealShown = true;
-        GM_setValue(LAST_HIDDEN_DEAL_SHOWN, true);
-    } else {
-        lastHiddenDealShown = false;
-        // GM_setValue nicht hier setzen, erst beim Schließen des UI
-    }
 
     // Initialize containers
     initUIContainers();
@@ -792,6 +1366,7 @@ function createSettingsUI() {
     // Get merchant info from current deal
     let merchantName = null;
     let showMerchantButton = false;
+    let userButtonHTML = '';
 
     settingsDiv.style.cssText = `
         position: fixed;
@@ -813,15 +1388,36 @@ function createSettingsUI() {
     `;
 
     if (dealThatOpenedSettings) {
+        // Merchant Info
         const merchantLink = dealThatOpenedSettings.querySelector('a[data-t="merchantLink"]');
         if (merchantLink) {
             merchantName = merchantLink.textContent.trim();
             showMerchantButton = true;
         }
-    }
 
-    // Process articles when opening settings
-    processArticles();
+        // User Info
+        const userSpan = dealThatOpenedSettings.querySelector('.overflow--ellipsis.size--all-xs.size--fromW3-s');
+        const userName = userSpan?.textContent.match(/Veröffentlicht von\s+(\S+)/)?.[1];
+
+        if (userName) {
+            userButtonHTML = `
+                <button id="hideUserDealsButton" style="
+                	display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 8px;
+                    background: ${colors.buttonBg};
+                    border: 1px solid ${colors.buttonBorder};
+                    border-radius: 3px;
+                    color: ${colors.text};
+                    cursor: pointer;
+                    width: 100%;
+                ">
+                    <i class="fas fa-user-slash"></i> <span style="font-weight: bold">${userName}</span>
+                </button>
+            `;
+        }
+    }
 
     // Header
     const header = document.createElement('div');
@@ -848,8 +1444,85 @@ function createSettingsUI() {
         padding-right: 5px;
         margin-bottom: 5px;
         max-height: calc(300px - 60px);
+        touch-action: pan-y;
+        -webkit-overflow-scrolling: touch;
     `;
     contentContainer.id = 'mdm-settings-content'; // ID hinzufügen für einfacheres Debugging
+
+    const updateNoticeShown = GM_getValue(UPDATE_NOTICE_SHOWN_KEY, true);
+    const currentVersion = GM_info?.script?.version ?? 'unbekannt';
+
+    if (!updateNoticeShown) {
+        // Hintergrundfarbe abhängig vom Theme (nutze die vorhandene Theme-Erkennung)
+        const themeColors = getThemeColors();
+        const isDarkTheme = themeColors === THEME_COLORS.dark;
+        const updateBgColor = isDarkTheme ? '#2d5a3a' : '#e9f6ec';
+
+        const updateNotice = document.createElement('div');
+        updateNotice.style.cssText = `
+            margin: 0 0 8px 0;
+            padding: 10px;
+            background: ${updateBgColor};
+            border: 1px solid #32cb5c;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 14px;
+            width: 100%;
+            box-sizing: border-box;
+            cursor: default;
+        `;
+
+        updateNotice.innerHTML = `
+            <span style="flex-grow: 1; cursor: default;">
+                mydealz Manager wurde auf Version ${currentVersion} aktualisiert
+            </span>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <button id="mdmChangelogBtn" class="button button--type-primary button--mode-default" style="
+                    padding: 4px 8px;
+                    font-size: 12px;
+                    background: #32cb5c;
+                    border: 1px solid #32cb5c;
+                    border-radius: 4px;
+                    color: white;
+                    cursor: pointer;
+                ">Changelog</button>
+                <button id="mdmCloseUpdateBtn" style="
+                    background: none;
+                    border: none;
+                    cursor: pointer;
+                    padding: 4px;
+                    display: flex;
+                    align-items: center;
+                "><i class="fas fa-times"></i></button>
+            </div>
+        `;
+
+        // Füge Notice zum Content-Container hinzu
+        contentContainer.insertBefore(updateNotice, contentContainer.firstChild);
+
+        // Event Handler für Buttons
+        const changelogBtn = updateNotice.querySelector('#mdmChangelogBtn');
+        const closeUpdateBtn = updateNotice.querySelector('#mdmCloseUpdateBtn');
+
+        if (changelogBtn) {
+            changelogBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Verhindere Event-Propagation
+                window.open(CHANGELOG_URL, '_blank', 'noopener');
+                GM_setValue(UPDATE_NOTICE_SHOWN_KEY, true);
+                updateNotice.remove();
+            });
+        }
+
+        if (closeUpdateBtn) {
+            closeUpdateBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Verhindere Event-Propagation
+                GM_setValue(UPDATE_NOTICE_SHOWN_KEY, true);
+                updateNotice.remove();
+            });
+        }
+    }
 
     // Accordion-Sektionen definieren und hinzufügen
     const sections = {
@@ -861,9 +1534,9 @@ function createSettingsUI() {
 
     // Quick Actions Section (standardmäßig offen)
     sections.quickActions.content.innerHTML = `
-    <div class="section-content" style="display: flex; flex-direction: column; gap: 6px;"> <!-- Reduced gap from 8px to 6px -->
+    <div class="section-content" style="display: flex; flex-direction: column; gap: 6px;">
         <!-- Word Input - mit nativer mydealz Suchfeld-Optik -->
-        <div style="margin-bottom: 6px;"> <!-- Reduced from 8px to 6px -->
+        <div style="margin-bottom: 6px;">
             <div style="display: flex; align-items: center; gap: 4px;">
                 <div class="search-box" style="
                     flex: 1;
@@ -882,21 +1555,21 @@ function createSettingsUI() {
                         autocomplete="off"
                         ${IS_TOUCH_DEVICE ? 'readonly' : ''}
                         placeholder="Neues Wort..."
-                        title="Deals mit hier eingetragenen Wörtern im Titel werden ausgeblendet."
-                        style="
-                            flex: 1;
-                            min-width: 0;
-                            padding: 0;
-                            border: none;
-                            outline: none;
-                            background: transparent;
-                            color: ${colors.text};
-                            font-size: 14px;
-                            height: 100%;
-                        ">
+                        title="Deals mit bestimmten Wörtern ausblenden.\nVerwende * für Teilmatch:\n• Kaffee* → findet Kaffeemaschine, Kaffeetasse, ...\n• *maschine → findet Kaffeemaschine, Waschmaschine, ...\n• *kaffee* → findet alles mit kaffee irgendwo im Wort\n\nSyntax:\n• * als Platzhalter für beliebige Zeichen\n• Ohne * wird das Wort exakt gesucht\n• Mehrere Filter können kombiniert werden"
+                        style="...">
                 </div>
                 ${IS_TOUCH_DEVICE ? `
-                    <button id="enableKeyboardButton" style="...">
+                    <button id="enableKeyboardButton" style="
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 8px;
+                        background: ${colors.buttonBg};
+                        border: 1px solid ${colors.buttonBorder};
+                        border-radius: 3px;
+                        color: ${colors.text};
+                        cursor: pointer;
+                    ">
                         <i class="fas fa-keyboard"></i>
                     </button>
                 ` : ''}
@@ -906,18 +1579,51 @@ function createSettingsUI() {
             </div>
         </div>
 
-        ${showMerchantButton ? `
-            <button id="hideMerchantButton" style="...">
-                <i class="fas fa-store-slash"></i> Alle Deals von <span style="font-weight: bold">${merchantName}</span> ausblenden
-            </button>
-        ` : ''}
+            ${showMerchantButton ? `
+                <div style="display: flex; align-items: center;">
+                    <button id="hideMerchantButton" style="
+                        width: 100%;
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                        padding: 0;
+                        background: none;
+                        border: none;
+                        color: ${colors.text};
+                        cursor: pointer;
+                    " title="Blendet alle aktuellen und zukünftigen Deals dieses Händlers aus">
+                        <i class="fas fa-store-slash"></i>
+                        <span>${merchantName}</span>
+                    </button>
+                </div>
+            ` : ''}
 
-        ${lastHiddenDeal && !lastHiddenDealShown ? `
-            <div id="lastHiddenDealSection" style="...">
-                <!-- Last hidden deal content -->
-            </div>
-        ` : ''}
-    </div>
+            <!-- Button zum Ausblenden von User-Deals -->
+            ${dealThatOpenedSettings ? (() => {
+                const userSpan = dealThatOpenedSettings.querySelector('.color--text-TranslucentSecondary.overflow--wrap-off span.overflow--ellipsis');
+                const userName = userSpan?.textContent.match(/Veröffentlicht von\s+(\S+)/)?.[1];
+
+                return userName ? `
+                    <div style="display: flex; align-items: center;">
+                        <button id="hideUserDealsButton" style="
+                            width: 100%;
+                            display: flex;
+                            align-items: center;
+                            gap: 12px;
+                            padding: 0;
+                            background: none;
+                            border: none;
+                            color: ${colors.text};
+                            cursor: pointer;
+                        " title="Blendet alle aktuellen und zukünftigen Deals dieses Benutzers aus">
+                            <i class="fas fa-user-slash"></i>
+                            <span>${userName}</span>
+                        </button>
+                    </div>
+                ` : '';
+            })() : ''}
+
+        </div>
     `;
 
     // Filter Section
@@ -937,8 +1643,18 @@ function createSettingsUI() {
             <!-- Separator -->
             <div style="height: 1px; background: ${colors.border}; opacity: 0.3; margin: 4px 0;"></div>
 
+            <!-- Button für Benutzerfilter -->
+            <button id="showBlockedUsersButton" class="menu-button">
+                <i class="fas fa-user-slash"></i> Benutzerfilter verwalten
+            </button>
+
+            <!-- Separator -->
+            <div style="height: 1px; background: ${colors.border}; opacity: 0.3; margin: 4px 0;"></div>
+
             <div class="toggle-option" style="display: flex; justify-content: space-between; align-items: center;">
-                <span title="Deals unter 0° werden ausgeblendet">Kalte Deals</span>
+                <span style="display: flex; align-items: center; cursor: help;" title="Deals unter 0° werden ausgeblendet">
+                    Kalte Deals
+                </span>
                 <button type="button" id="hideColdDeals" class="eye-toggle" style="...">
                     <i class="fas ${hideColdDeals ? 'fa-eye-slash' : 'fa-eye'}"></i>
                 </button>
@@ -948,7 +1664,7 @@ function createSettingsUI() {
             <div style="height: 1px; background: ${colors.border}; opacity: 0.3; margin: 4px 0;"></div>
 
             <div style="display: flex; align-items: center; gap: 10px;">
-                <label style="flex-grow: 1" title="Deals über diesem Preis werden ausgeblendet">
+                <label style="flex-grow: 1; cursor: help;" title="Deals über diesem Preis werden ausgeblendet">
                     Teure Deals
                 </label>
                 <input
@@ -957,9 +1673,9 @@ function createSettingsUI() {
                     pattern="[0-9]*[.,]?[0-9]*"
                     id="settingsMaxPrice"
                     value="${maxPrice.toLocaleString('de-DE', {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 2
-    })}"
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 2
+                    })}"
                     placeholder="€"
                     style="
                         width: 80px;
@@ -975,39 +1691,14 @@ function createSettingsUI() {
         </div>
     `;
 
-    // Vor dem Öffnen des UIs den Status der Icons aktualisieren
-    const anyHidden = Object.values(SIDEBAR_ELEMENTS).some(element => element.hidden);
-    const allHidden = Object.values(SIDEBAR_ELEMENTS).length > 0 &&
-          Object.values(SIDEBAR_ELEMENTS).every(element => element.hidden);
-
-    // Passt hideCustomBanners basierend auf dem tatsächlichen Status der Elemente an
-    if (allHidden) {
-        window.hideCustomBanners = true;
-        GM_setValue('hideCustomBanners', true);
-    } else if (anyHidden) {
-        // Bei teilweiser Sichtbarkeit soll hideCustomBanners deaktiviert sein
-        window.hideCustomBanners = false;
-        GM_setValue('hideCustomBanners', false);
-    } else {
-        window.hideCustomBanners = false;
-        GM_setValue('hideCustomBanners', false);
-    }
-
-    // Aktualisiere die Icon-Klasse und Aria-Label für hideCustomBanners vor dem Hinzufügen
-    const customBannerIconClass = allHidden ? 'fa-eye-slash' :
-    anyHidden ? 'fa-eye-low-vision' :
-    'fa-eye';
-
-    const customBannerAriaLabel = allHidden ? 'Elemente versteckt' :
-    anyHidden ? 'Einige Elemente versteckt' :
-    'Elemente sichtbar';
-
     // Features Section
     sections.features.content.innerHTML = `
         <div class="section-content" style="display: flex; flex-direction: column; gap: 6px;">
             ${document.querySelector('[data-t="shareBtn"]') ? `
                 <div class="toggle-option" style="display: flex; justify-content: space-between; align-items: center;">
-                    <span title="Blendet den Teilen Button in jedem Deal in der Übersicht aus">Teilen Button</span>
+                    <span style="display: flex; align-items: center; cursor: help;" title="Blendet den Teilen Button in jedem Deal in der Übersicht aus">
+                        Teilen Button
+                    </span>
                     <button type="button" id="hideShareButtons" class="eye-toggle" style="
                         background: none;
                         border: none;
@@ -1035,51 +1726,8 @@ function createSettingsUI() {
                 align-items: center;
                 position: relative;
             ">
-                <button type="button" id="openSidebarElementsButton" class="text-button" style="
-                    background: none;
-                    border: none;
-                    cursor: pointer;
-                    text-align: left;
-                    padding: 0;
-                    color: ${colors.text};
-                    font-size: inherit;
-                    position: relative;
-                    z-index: 2;
-                    flex-grow: 1;
-                    display: flex;
-                    align-items: center;
-                " title="${window.innerWidth <= 768 ? 'Verwalte Banner und Widgets' : 'Verwalte Banner und Widgets'}">
-                    ${window.innerWidth <= 768 ? 'Banner & Feed-Elemente' : 'Banner & Widgets'}
-                </button>
 
-                <!-- Senkrechter Trennstrich -->
-                <div style="
-                    width: 1px;
-                    height: 18px;
-                    background-color: ${colors.border};
-                    margin: 0 10px;
-                    opacity: 0.7;
-                "></div>
-
-                <button type="button" id="hideCustomBanners" class="eye-toggle" style="
-                    background: none;
-                    border: none;
-                    cursor: pointer;
-                    font-size: 18px;
-                    color: ${colors.text};
-                    width: 30px;
-                    height: 30px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                ">
-                    <i class="fas ${customBannerIconClass}"
-                    aria-label="${customBannerAriaLabel}"></i>
-                </button>
             </div>
-
-            <!-- Separator -->
-            <div style="height: 1px; background: ${colors.border}; opacity: 0.3; margin: 6px 0;"></div>
 
             <div class="toggle-option" style="display: flex; justify-content: space-between; align-items: center;">
                 <span style="display: flex; align-items: center; cursor: help;" title="Gibt es zu dem Deal einen hinterlegten Händler und befindet sich der Name des Händlers im Titel, so wird dieser Name aus dem Titel ausgeblendet.">
@@ -1105,10 +1753,10 @@ function createSettingsUI() {
             <!-- Separator -->
             <div style="height: 1px; background: ${colors.border}; opacity: 0.3; margin: 6px 0;"></div>
 
-            <!-- Neue Toggle-Option für Sortierung merken (VERSCHOBEN UNTER HÄNDLER IM TITEL) -->
+            <!-- Toggle-Option für Speicherun der Sucheinstellungen -->
             <div class="toggle-option" style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="display: flex; align-items: center; cursor: help;" title="Standardmäßig wird nach Relevanz sortiert. Wählt der Nutzer eine andere Sortierung, wird diese gespeichert und bei der nächsten Suche automatisch angewandt.">
-                    Sortierung merken
+                <span style="display: flex; align-items: center; cursor: help;" title="Mit dieser Funktion werden die Werte für 'Sortieren' und 'Datumsbereich' gespeichert und bei zukünftigen Suchen sofort angewandt.">
+                    Sucheinstellungen speichern
                 </span>
                 <button type="button" id="rememberSort" class="toggle-switch" style="
                     background: none;
@@ -1197,10 +1845,6 @@ function createSettingsUI() {
     const cleanupDraggable = makeDraggable(settingsDiv);
     if (cleanupDraggable) cleanupFunctions.push(cleanupDraggable);
 
-    // Füge Scroll Handling Cleanup hinzu
-    const cleanupScrollHandling = setupScrollHandling();
-    if (cleanupScrollHandling) cleanupFunctions.push(cleanupScrollHandling);
-
     // Erweitere die Hauptcleanup-Funktion einmalig
     const oldCleanup = cleanup;
     cleanup = () => {
@@ -1225,11 +1869,11 @@ function createSettingsUI() {
         const newState = !window.rememberSort;
         window.rememberSort = newState;
         GM_setValue('rememberSort', newState);
+        localStorage.setItem('rememberSort', newState.toString());
 
         // Wenn Feature deaktiviert wurde, gespeicherte Sortierung entfernen
         if (!newState && localStorage.getItem(PREFERRED_SORT_KEY)) {
             localStorage.removeItem(PREFERRED_SORT_KEY);
-            if (DEBUG) console.log('[MDM Sort] Gespeicherte Sortierung gelöscht (Feature deaktiviert)');
         }
 
         // Update icon
@@ -1272,6 +1916,7 @@ function createSettingsUI() {
 
     if (backupButton) {
         backupButton.addEventListener('click', () => {
+            console.log('[MDM] Backup button clicked');
             backupData();
         });
     }
@@ -1387,6 +2032,21 @@ function createSettingsUI() {
         });
     }
 
+    // Event Listener für den Button zum Ausblenden von User-Deals
+    const hideUserDealsButton = document.getElementById('hideUserDealsButton');
+    console.log('[MDM] hideUserDealsButton found:', !!hideUserDealsButton, 'dealThatOpenedSettings:', dealThatOpenedSettings?.id);
+    if (hideUserDealsButton) {
+        hideUserDealsButton.addEventListener('click', () => {
+            console.log('[MDM] hideUserDealsButton clicked');
+            if (dealThatOpenedSettings) {
+                handleUserBlock(dealThatOpenedSettings);
+                cleanup();
+            } else {
+                console.log('[MDM] No dealThatOpenedSettings available');
+            }
+        });
+    }
+
     // Show Words List Button
     const showWordsListButton = document.getElementById('showWordsListButton');
     if (showWordsListButton) {
@@ -1407,12 +2067,15 @@ function createSettingsUI() {
         });
     }
 
-    // Sidebar Elements Button
-    document.getElementById('openSidebarElementsButton').addEventListener('click', () => {
-        if (switchSubUI('sidebar')) {
-            createSidebarElementsUI();
-        }
-    });
+    // Button für Blockierte Benutzer:
+    const showBlockedUsersButton = document.getElementById('showBlockedUsersButton');
+    if (showBlockedUsersButton) {
+        showBlockedUsersButton.addEventListener('click', () => {
+            if (switchSubUI('users')) {
+                createBlockedUsersUI();
+            }
+        });
+    }
 
     // Add event listeners only if newWordInput exists
     const newWordInput = document.getElementById('newWordInput');
@@ -1508,8 +2171,21 @@ function createSettingsUI() {
             const numericValue = parseFloat(numStr);
 
             if (!isNaN(numericValue) && numericValue >= 0) {
+                const oldValue = maxPrice;
                 saveMaxPrice(numericValue);
-                processArticles();
+
+                // Auch filtern wenn Wert gleich blieb (z.B. bei Enter ohne Änderung)
+                if (oldValue === numericValue) {
+                    processArticles();
+                }
+            }
+        });
+
+        // Enter-Taste zum Übernehmen
+        maxPriceInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                maxPriceInput.blur(); // Triggert blur-Event, das den Wert speichert
             }
         });
 
@@ -1536,10 +2212,6 @@ function createSettingsUI() {
         hiddenDeals = hiddenDeals.filter(id => id !== dealId);
         saveHiddenDeals();
 
-        // Deal als angezeigt markieren
-        lastHiddenDealShown = true;
-        GM_setValue(LAST_HIDDEN_DEAL_SHOWN, true);
-
         // UI aktualisieren
         document.getElementById('lastHiddenDealSection').style.display = 'none';
 
@@ -1565,6 +2237,7 @@ function createSettingsUI() {
         const newState = !window.hideShareButtons;
         window.hideShareButtons = newState;
         GM_setValue('hideShareButtons', newState);
+        localStorage.setItem('hideShareButtons', newState.toString());
 
         // Update icon
         const icon = e.currentTarget.querySelector('i');
@@ -1585,6 +2258,7 @@ function createSettingsUI() {
         const newState = !window.hideMatchingMerchantNames;
         window.hideMatchingMerchantNames = newState;
         GM_setValue('hideMatchingMerchantNames', newState);
+        localStorage.setItem('hideMatchingMerchantNames', newState.toString());
 
         // Update icon
         const icon = e.currentTarget.querySelector('i');
@@ -1596,29 +2270,6 @@ function createSettingsUI() {
         // Update visibility
         await Promise.resolve();
         processArticles();
-    });
-
-    // Event Handler für den Custom Banner-Toggle
-    document.getElementById('hideCustomBanners')?.addEventListener('click', async () => {
-        // Toggle state
-        const newState = !window.hideCustomBanners;
-
-        // Aktualisiere alle SIDEBAR_ELEMENTS nur im Status
-        Object.keys(SIDEBAR_ELEMENTS).forEach(key => {
-            const element = SIDEBAR_ELEMENTS[key];
-            element.hidden = newState;
-            GM_setValue(element.storageKey, newState);
-        });
-
-        // Aktualisiere die Haupt-Variable
-        window.hideCustomBanners = newState;
-        GM_setValue('hideCustomBanners', newState);
-
-        // Haupt-Icon aktualisieren
-        updateCustomBannerIcon();
-
-        // WICHTIG: Aktualisiere auch die UI-Elemente in der Sidebar
-        updateSidebarElementsUI();
     });
 
     document.getElementById('hideColdDeals')?.addEventListener('click', async (e) => {
@@ -1640,7 +2291,6 @@ function createSettingsUI() {
         await Promise.resolve();
         processArticles();
     });
-
 }
 
 function makeDraggable(element) {
@@ -1699,21 +2349,19 @@ function makeDraggable(element) {
         element.style.top = finalTop + 'px';
 
         // Direkt die Sub-UIs aktualisieren
-        if (wordsListDiv?.parentNode || merchantListDiv?.parentNode || document.getElementById('sidebarElementsDiv')) {
-            const settingsRect = element.getBoundingClientRect();
-            [
-                wordsListDiv,
-                merchantListDiv,
-                document.getElementById('sidebarElementsDiv'),
-                document.getElementById('wordSuggestionList')
-            ].forEach(ui => {
-                if (ui?.parentNode) {
-                    ui.style.position = 'fixed';
-                    ui.style.top = `${settingsRect.top}px`;
-                    ui.style.left = `${settingsRect.right + 10}px`;
-                }
-            });
-        }
+        const settingsRect = element.getBoundingClientRect();
+        [
+            wordsListDiv,
+            merchantListDiv,
+            blockedUsersDiv,
+            document.getElementById('wordSuggestionList')
+        ].forEach(ui => {
+            if (ui?.parentNode) {
+                ui.style.position = 'fixed';
+                ui.style.top = `${settingsRect.top}px`;
+                ui.style.left = `${settingsRect.right + 10}px`;
+            }
+        });
     };
 
     const stopDrag = () => {
@@ -1735,7 +2383,7 @@ function makeDraggable(element) {
         [
             wordsListDiv,
             merchantListDiv,
-            document.getElementById('sidebarElementsDiv'),
+            blockedUsersDiv,
             document.getElementById('wordSuggestionList')
         ].forEach(ui => {
             if (ui?.parentNode) {
@@ -1768,7 +2416,7 @@ function makeDraggable(element) {
                 [
                     wordsListDiv,
                     merchantListDiv,
-                    document.getElementById('sidebarElementsDiv'),
+                    blockedUsersDiv,
                     document.getElementById('wordSuggestionList')
                 ].forEach(ui => {
                     if (ui?.parentNode) {
@@ -1789,166 +2437,6 @@ function makeDraggable(element) {
         document.removeEventListener('mousemove', drag);
         document.removeEventListener('mouseup', stopDrag);
     };
-}
-
-function createSidebarElementsUI() {
-    const colors = getThemeColors();
-    const isMobile = window.innerWidth <= 768;
-
-    const sidebarElementsDiv = document.createElement('div');
-    sidebarElementsDiv.id = 'sidebarElementsDiv';
-    sidebarElementsDiv.style.cssText = `
-        ${getSubUIPosition()}
-        padding: 15px;
-        background-color: ${colors.background};
-        border: 1px solid ${colors.border};
-        border-radius: 5px;
-        width: 300px;
-        color: ${colors.text};
-        z-index: 10003;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    `;
-
-    // Gerätetyp erkennen für angepasste Bezeichnungen
-    const sidebarText = isMobile ? "Feed" : "Seitenleiste";
-    let elementsHTML = '';
-
-    Object.entries({
-        banner: {
-            title: "Banner",
-            keys: ['headerBanners', 'feedBanners', 'voteBox']
-        },
-        widgets: {
-            title: isMobile ? "Feed-Elemente" : "Widgets",
-            keys: Object.keys(SIDEBAR_ELEMENTS.widgets) // Ändere dies um alle Widget-Keys einzuschließen
-        }
-    }).forEach(([catKey, category]) => {
-        elementsHTML += `
-            <div class="sidebar-category" style="margin-bottom: 15px;">
-                <h4 style="margin: 0 0 8px 0; font-size: 14px;">${category.title}</h4>
-                <div style="display: flex; flex-direction: column; gap: 6px;">
-        `;
-
-        category.keys.forEach(key => {
-            // Prüfe ob es ein Banner oder Widget Element ist
-            const element = SIDEBAR_ELEMENTS[catKey === 'banner' ? 'banners' : 'widgets'][key];
-            if (!element) return;
-
-            const isActive = !element.hidden;
-
-            elementsHTML += `
-                <div class="sidebar-element" style="
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    padding: 8px;
-                    background: ${colors.itemBg};
-                    border: 1px solid ${colors.border};
-                    border-radius: 3px;
-                ">
-                    <span style="font-size: 14px;">${element.name}</span>
-                    <button class="toggle-sidebar-element" data-key="${key}" data-type="${catKey}" style="
-                        background: none;
-                        border: none;
-                        cursor: pointer;
-                        font-size: 16px;
-                        color: ${colors.text};
-                        width: 30px;
-                        height: 30px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        padding: 0;
-                    ">
-                        <i class="fas ${isActive ? 'fa-eye' : 'fa-eye-slash'}"
-                        aria-label="${isActive ? 'Element sichtbar' : 'Element versteckt'}"></i>
-                    </button>
-                </div>
-            `;
-        });
-
-        elementsHTML += `
-                </div>
-            </div>
-        `;
-    });
-
-    sidebarElementsDiv.innerHTML = `
-        <div style="margin-bottom: 15px;">
-            ${elementsHTML}
-        </div>
-        <div style="
-            display: flex;
-            justify-content: center;
-            margin-top: 20px;
-        ">
-            <button id="closeSidebarElementsButton" class="button button--type-secondary button--mode-default button--shape-circle" style="
-                padding: 8px 16px;
-                display: inline-block;
-                width: auto;
-                min-width: 100px;
-                text-align: center;
-                font-size: 14px;
-            ">
-                <span>Schließen</span>
-            </button>
-        </div>
-    `;
-
-    document.body.appendChild(sidebarElementsDiv);
-
-    // Event-Listener für die Toggle-Buttons
-    document.querySelectorAll('.toggle-sidebar-element').forEach(button => {
-        button.addEventListener('click', (e) => {
-            const key = button.dataset.key;
-            const type = button.dataset.type;
-            const elementGroup = type === 'banner' ? SIDEBAR_ELEMENTS.banners : SIDEBAR_ELEMENTS.widgets;
-
-            if (!key || !elementGroup[key]) return;
-
-            const element = elementGroup[key];
-            const newState = !element.hidden;
-
-            element.hidden = newState;
-            GM_setValue(element.storageKey, newState);
-
-            // Wende Sichtbarkeit auf DOM-Elemente an
-            document.querySelectorAll(element.selector).forEach(el => {
-                el.style.display = newState ? 'none' : '';
-            });
-
-            updateSidebarElementsUI();
-            updateCustomBannerIcon();
-        });
-    });
-
-    // Event-Listener für den Schließen-Button hinzufügen - nur dieses UI schließen
-    document.getElementById('closeSidebarElementsButton').addEventListener('click', (e) => {
-        e.stopPropagation(); // Verhindert Event-Bubbling
-        const sidebarDiv = document.getElementById('sidebarElementsDiv');
-        if (sidebarDiv) {
-            sidebarDiv.remove();
-        }
-    });
-}
-
-// Togglen der Feed-Banner
-function toggleFeedBanners(hide) {
-    const feedBannerConfig = SIDEBAR_ELEMENTS.banners.feedBanners;
-    if (!feedBannerConfig) return;
-
-    // Speichere Status
-    feedBannerConfig.hidden = hide;
-    GM_setValue(feedBannerConfig.storageKey, hide);
-
-    // Wende Sichtbarkeit auf alle Feed-Banner an
-    document.querySelectorAll('[id^="customBannerList-id-"]').forEach(banner => {
-        banner.style.display = hide ? 'none' : '';
-    });
-
-    // Update Icon im UI
-    updateSidebarElementsUI();
-    updateCustomBannerIcon();
 }
 
 // Accordion-Sektion erstellen
@@ -2053,8 +2541,15 @@ function createMerchantListUI() {
                 background: none;
                 border: none;
                 cursor: pointer;
-                color: ${colors.text};">
-                <i class="fas fa-times"></i>
+                color: ${colors.text};
+                width: 24px;
+                height: 24px;
+                display: flex;
+                align-items: center;
+                justify-content: center;">
+                <svg width="16" height="16">
+                    <use xlink:href="https://www.mydealz.de/assets/img/ico_632f5.svg#trash"></use>
+                </svg>
             </button>
         </div>
     `).join('');
@@ -2076,7 +2571,9 @@ function createMerchantListUI() {
                 height: 200px;
                 overflow-y: auto;
                 padding-right: 5px;
-                min-height: 200px;">
+                min-height: 200px;
+                touch-action: pan-y;
+                -webkit-overflow-scrolling: touch;">
                 ${merchantListHTML}
             </div>
             <button id="clearMerchantListButton" style="
@@ -2088,7 +2585,12 @@ function createMerchantListUI() {
                 border-radius: 3px;
                 cursor: pointer;
                 margin-top: 10px;">
-                <i class="fas fa-trash"></i> Alle Händler entfernen
+                <span style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <svg width="16" height="16">
+                        <use xlink:href="https://www.mydealz.de/assets/img/ico_632f5.svg#trash"></use>
+                    </svg>
+                    Alle Händler entfernen
+                </span>
             </button>
         </div>
         <div style="
@@ -2146,6 +2648,7 @@ function createMerchantListUI() {
             saveExcludeMerchants([]);
             document.getElementById('merchantList').innerHTML = '';
             excludeMerchantIDs = [];
+            rebuildExcludeMerchantCache([]);
             processArticles();
 
             // Immediately update counter in heading
@@ -2200,8 +2703,15 @@ function createExcludeWordsUI() {
                 background: none;
                 border: none;
                 cursor: pointer;
-                color: ${colors.text};">
-                <i class="fas fa-times"></i>
+                color: ${colors.text};
+                width: 24px;
+                height: 24px;
+                display: flex;
+                align-items: center;
+                justify-content: center;">
+                <svg width="16" height="16">
+                    <use xlink:href="https://www.mydealz.de/assets/img/ico_632f5.svg#trash"></use>
+                </svg>
             </button>
         </div>
     `).join('');
@@ -2223,7 +2733,9 @@ function createExcludeWordsUI() {
                 height: 200px;
                 overflow-y: auto;
                 padding-right: 5px;
-                min-height: 200px;">
+                min-height: 200px;
+                touch-action: pan-y;
+                -webkit-overflow-scrolling: touch;">
                 ${wordsListHTML}
             </div>
             <button id="clearWordsListButton" style="
@@ -2235,7 +2747,12 @@ function createExcludeWordsUI() {
                 border-radius: 3px;
                 cursor: pointer;
                 margin-top: 10px;">
-                <i class="fas fa-trash"></i> Alle Wörter entfernen
+                <span style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <svg width="16" height="16">
+                        <use xlink:href="https://www.mydealz.de/assets/img/ico_632f5.svg#trash"></use>
+                    </svg>
+                    Alle Wörter entfernen
+                </span>
             </button>
         </div>
         <div style="
@@ -2320,6 +2837,187 @@ function createExcludeWordsUI() {
     document.body.appendChild(wordsListDiv);
 
     setupClickOutsideHandler();
+}
+// Blockierte Benutzer UI erstellen
+function createBlockedUsersUI() {
+    const colors = getThemeColors();
+    blockedUsersDiv.id = 'blockedUsersDiv';
+    blockedUsersDiv.style.cssText = `
+        ${getSubUIPosition()}
+        padding: 15px;
+        background: ${colors.background};
+        border: 1px solid ${colors.border};
+        border-radius: 5px;
+        width: 300px;
+        color: ${colors.text};
+    `;
+
+    // Lade blockierte Benutzer
+    const blockedUsers = GM_getValue('blockedUsers', []);
+    if (DEBUG.userBlocking) {
+        console.log('[MDM UserBlock] Loading blocked users UI, count:', blockedUsers.length, 'users:', blockedUsers);
+    }
+
+    const blockedUsersHTML = blockedUsers.map(user => `
+        <div class="user-item" style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+            padding: 5px;
+            background: ${colors.itemBg};
+            color: ${colors.text};
+            border: 1px solid ${colors.border};
+            border-radius: 3px;">
+            <span>${user}</span>
+            <button class="delete-user" data-user="${user}" style="
+                background: none;
+                border: none;
+                cursor: pointer;
+                color: ${colors.text};
+                width: 24px;
+                height: 24px;
+                display: flex;
+                align-items: center;
+                justify-content: center;">
+                <svg width="16" height="16">
+                    <use xlink:href="https://www.mydealz.de/assets/img/ico_632f5.svg#trash"></use>
+                </svg>
+            </button>
+        </div>
+    `).join('');
+
+    blockedUsersDiv.innerHTML = `
+        <h4 style="margin-bottom: 10px;">Ausgeblendete Benutzer (${blockedUsers.length})</h4>
+        <input type="text" id="userSearch" placeholder="Benutzer suchen..."
+            style="
+                width: 100%;
+                padding: 5px;
+                margin-bottom: 10px;
+                background: ${colors.inputBg};
+                border: 1px solid ${colors.border};
+                color: ${colors.text};
+                border-radius: 3px;">
+        <div style="margin-bottom: 15px;">
+            <div id="usersList" style="
+                margin-bottom: 10px;
+                height: 200px;
+                overflow-y: auto;
+                padding-right: 5px;
+                min-height: 200px;
+                touch-action: pan-y;
+                -webkit-overflow-scrolling: touch;">
+                ${blockedUsersHTML}
+            </div>
+            <button id="clearBlockedUsersButton" style="
+                width: 100%;
+                padding: 5px 10px;
+                background: ${colors.buttonBg};
+                border: 1px solid ${colors.buttonBorder};
+                color: ${colors.text};
+                border-radius: 3px;
+                cursor: pointer;
+                margin-top: 10px;">
+                <span style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <svg width="16" height="16">
+                        <use xlink:href="https://www.mydealz.de/assets/img/ico_632f5.svg#trash"></use>
+                    </svg>
+                    Alle Benutzer entfernen
+                </span>
+            </button>
+        </div>
+        <div style="
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+        ">
+            <button id="closeBlockedUsersButton" class="button button--type-secondary button--mode-default button--shape-circle">
+                <span>Schließen</span>
+            </button>
+        </div>
+    `;
+
+    document.body.appendChild(blockedUsersDiv);
+    setupClickOutsideHandler();
+
+    // Nach dem Hinzufügen zum DOM den Button anpassen
+    document.getElementById('closeBlockedUsersButton').style.cssText = `
+        padding: 8px 16px;
+        display: inline-block;
+        width: auto;
+        min-width: 100px;
+        text-align: center;
+    `;
+
+    // Suchfunktionalität
+    const searchInput = document.getElementById('userSearch');
+    searchInput.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        let visibleCount = 0;
+        const totalCount = blockedUsers.length;
+
+        document.querySelectorAll('.user-item').forEach(item => {
+            const userName = item.querySelector('span').textContent.toLowerCase();
+            const isVisible = userName.includes(searchTerm);
+            item.style.display = isVisible ? 'flex' : 'none';
+            if (isVisible) visibleCount++;
+        });
+
+        // Update heading counter
+        const heading = blockedUsersDiv.querySelector('h4');
+        if (heading) {
+            heading.textContent = searchTerm
+                ? `Ausgeblendete Benutzer (${visibleCount}/${totalCount})`
+                : `Ausgeblendete Benutzer (${totalCount})`;
+        }
+    });
+
+    // Alle Benutzer entfernen Button
+    document.getElementById('clearBlockedUsersButton').addEventListener('click', () => {
+        if (confirm('Möchten Sie wirklich alle Benutzer aus der Liste entfernen?')) {
+            GM_setValue('blockedUsers', []);
+            document.getElementById('usersList').innerHTML = '';
+            processArticles();
+
+            // Immediately update counter in heading
+            const heading = blockedUsersDiv.querySelector('h4');
+            if (heading) {
+                heading.textContent = 'Ausgeblendete Benutzer (0)';
+            }
+        }
+    });
+
+    // Einzelne Benutzer entfernen
+    document.querySelectorAll('.delete-user').forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const userToDelete = button.dataset.user;
+            const userItem = button.closest('.user-item');
+            const blockedUsers = GM_getValue('blockedUsers', []);
+
+            // Update blockedUsers array
+            const updatedUsers = blockedUsers.filter(user => user !== userToDelete);
+            GM_setValue('blockedUsers', updatedUsers);
+
+            // Update UI
+            userItem.remove();
+            processArticles();
+
+            // Update counter in heading
+            const heading = blockedUsersDiv.querySelector('h4');
+            if (heading) {
+                heading.textContent = `Ausgeblendete Benutzer (${updatedUsers.length})`;
+            }
+        });
+    });
+
+    // Schließen Button
+    document.getElementById('closeBlockedUsersButton').addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeActiveSubUI();
+    });
 }
 
 // === UI-Updates ===
@@ -2418,6 +3116,7 @@ function updateSuggestionList() {
         z-index: 1002;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         display: block;
+        touch-action: pan-y;
         -webkit-overflow-scrolling: touch;
     `;
 
@@ -2512,60 +3211,6 @@ function updateShareButtonsVisibility(hide) {
         styleElement.remove();
     }
 }
-// Custom Banner Icon aktualisieren
-function updateCustomBannerIcon() {
-    // Suche das Icon-Element im DOM
-    const iconElement = document.querySelector('#hideCustomBanners i');
-    if (!iconElement) return;
-
-    // Prüfe Status der individuellen Elemente
-    const anyHidden = Object.values(SIDEBAR_ELEMENTS).some(element => element.hidden);
-    const allHidden = Object.values(SIDEBAR_ELEMENTS).length > 0 &&
-          Object.values(SIDEBAR_ELEMENTS).every(element => element.hidden);
-
-    // Setze das Icon basierend auf dem Status
-    if (allHidden) {
-        // Wenn alle Elemente ausgeblendet sind, Auge durchgestrichen
-        iconElement.className = 'fas fa-eye-slash';
-        iconElement.setAttribute('aria-label', 'Custom Banner versteckt');
-    } else if (anyHidden) {
-        // Wenn einige Elemente ausgeblendet sind, Low-Vision Icon
-        iconElement.className = 'fas fa-eye-low-vision';
-        iconElement.setAttribute('aria-label', 'Einige Banner versteckt');
-    } else {
-        // Wenn alle Elemente sichtbar sind, normales Auge
-        iconElement.className = 'fas fa-eye';
-        iconElement.setAttribute('aria-label', 'Custom Banner sichtbar');
-    }
-}
-// Sidebar-Elemente UI aktualisieren
-function updateSidebarElementsUI() {
-
-    const sidebarElementsDiv = document.getElementById('sidebarElementsDiv');
-    if (!sidebarElementsDiv) return;
-
-    document.querySelectorAll('.toggle-sidebar-element').forEach(button => {
-        const key = button.dataset.key;
-        const type = button.dataset.type;
-        // Prüfe sowohl Banner als auch Widgets
-        const elementGroup = type === 'banner' ? SIDEBAR_ELEMENTS.banners : SIDEBAR_ELEMENTS.widgets;
-
-        if (!key || !elementGroup[key]) return;
-
-        const element = elementGroup[key];
-        const icon = button.querySelector('i');
-        if (icon) {
-            icon.className = `fas ${element.hidden ? 'fa-eye-slash' : 'fa-eye'}`;
-            icon.setAttribute('aria-label', element.hidden ? 'Element versteckt' : 'Element sichtbar');
-        }
-    });
-
-    Object.entries(SIDEBAR_ELEMENTS).forEach(([category, items]) => {
-        Object.entries(items).forEach(([key, element]) => {
-        });
-    });
-
-}
 
 // === Event-Handler ===
 // --- Click & Touch ---
@@ -2579,9 +3224,7 @@ function setupClickOutsideHandler() {
         // Early exit for clicks on UI controls
         if (e.target.closest('.settings-button') ||
             e.target.closest('#showMerchantListButton') ||
-            e.target.closest('#showWordsListButton') ||
-            e.target.closest('#openSidebarElementsButton') ||
-            e.target.closest('#closeSidebarElementsButton')) {
+            e.target.closest('#showWordsListButton')) {
             return;
         }
 
@@ -2589,13 +3232,13 @@ function setupClickOutsideHandler() {
         const settingsOpen = settingsDiv?.parentNode;
         const merchantsOpen = merchantListDiv?.parentNode;
         const wordsOpen = wordsListDiv?.parentNode;
-        const sidebarElementsOpen = document.getElementById('sidebarElementsDiv')?.parentNode;
+        const blockedUsersOpen = blockedUsersDiv?.parentNode;
 
         // Check if click was outside all UIs
         const clickedOutside = (!settingsOpen || !settingsDiv.contains(e.target)) &&
               (!merchantsOpen || !merchantListDiv.contains(e.target)) &&
               (!wordsOpen || !wordsListDiv.contains(e.target)) &&
-              (!sidebarElementsOpen || !document.getElementById('sidebarElementsDiv').contains(e.target));
+              (!blockedUsersOpen || !blockedUsersDiv.contains(e.target))
 
         if (clickedOutside) {
             cleanup();
@@ -2604,10 +3247,7 @@ function setupClickOutsideHandler() {
             if (settingsDiv?.parentNode) settingsDiv.remove();
             if (merchantListDiv?.parentNode) merchantListDiv.remove();
             if (wordsListDiv?.parentNode) wordsListDiv.remove();
-
-            // Sicherer Zugriff mit optionaler Verkettung
-            const sidebarDiv = document.getElementById('sidebarElementsDiv');
-            if (sidebarDiv?.parentNode) sidebarDiv.remove();
+            if (blockedUsersDiv?.parentNode) blockedUsersDiv.remove();
 
             // Reset states
             isSettingsOpen = false;
@@ -2624,6 +3264,7 @@ function setupClickOutsideHandler() {
         document.addEventListener('click', uiClickOutsideHandler);
     }, 100);
 }
+
 function createSuggestionClickHandler() {
     // Remove old handler if exists
     if (suggestionClickHandler) {
@@ -2686,31 +3327,31 @@ function setupScrollHandling() {
 
     function handleScroll(e) {
         // Prüfe ob der Mauszeiger über einem UI-Element ist
-        const isOverUI = e.target.closest('#mdm-settings-popup, #merchantListDiv, #wordsListDiv, #wordSuggestionList, #sidebarElementsDiv') ||
+        const isOverUI = e.target.closest('#mdm-settings-popup, #merchantListDiv, #wordsListDiv, #wordSuggestionList') ||
               settingsDiv?.contains(e.target) ||
               merchantListDiv?.contains(e.target) ||
-              wordsListDiv?.contains(e.target) ||
-              document.getElementById('sidebarElementsDiv')?.contains(e.target);
+              wordsListDiv?.contains(e.target);
 
         if (isOverUI) {
-            // Verhindern des Standard-Scroll-Verhaltens (Website-Scrolling)
-            e.preventDefault();
-
             // Finde das scrollbare übergeordnete Element
-            const scrollableContainer = e.target.closest('#mdm-settings-content, #merchantList, #wordsList, #wordSuggestionList, #sidebarElementsDiv');
+            const scrollableContainer = e.target.closest('#mdm-settings-content, #merchantList, #wordsList, #wordSuggestionList');
 
             if (scrollableContainer && isScrollable(scrollableContainer)) {
-                // Manuelles Scrollen des Containers implementieren
-                const deltaY = e.deltaY || e.detail || e.wheelDelta;
-                const scrollAmount = deltaY > 0 ? 40 : -40; // Scroll-Schrittgröße
+                // Nutze natives Browser-Scrolling (kein preventDefault)
+                // Browser scrollt automatisch mit korrekter Geschwindigkeit
 
-                // Scrolle den Container
-                scrollableContainer.scrollTop += scrollAmount;
+                // Nur wenn am Scroll-Limit, verhindere Seiten-Scroll
+                const deltaY = e.deltaY || e.detail || -(e.wheelDelta || 0);
+                if (isAtScrollLimit(scrollableContainer, deltaY)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                // Sonst: Lass natives Scrolling zu
+            } else {
+                // Nicht scrollbar: verhindere Seiten-Scroll
+                e.preventDefault();
+                e.stopPropagation();
             }
-
-            // Event-Propagation stoppen
-            e.stopPropagation();
-            return false;
         }
     }
 
@@ -2725,8 +3366,7 @@ function setupScrollHandling() {
             settingsDiv,
             merchantListDiv,
             wordsListDiv,
-            document.getElementById('wordSuggestionList'),
-            document.getElementById('sidebarElementsDiv')
+            document.getElementById('wordSuggestionList')
         ];
 
         isScrollingUI = uiElements.some(el => {
@@ -2742,23 +3382,23 @@ function setupScrollHandling() {
     function handleTouchMove(e) {
         if (!isScrollingUI) return;
 
-        const touch = e.touches[0];
-        const scrollableElement = e.target.closest('#mdm-settings-content, #merchantList, #wordsList, #sidebarElementsDiv');
+        const scrollableElement = e.target.closest('#mdm-settings-content, #merchantList, #wordsList');
 
         if (scrollableElement && isScrollable(scrollableElement)) {
+            // Erlaube natives Touch-Scrolling für scrollbare Elemente
+            // Prüfe ob am Anfang oder Ende des Scrollbereichs
+            const touch = e.touches[0];
             const deltaY = touchStartY - touch.clientY;
 
-            // Immer preventDefault aufrufen, um Seiten-Scrolling zu verhindern
-            e.preventDefault();
-
-            // Scrollen des UI-Elements
-            scrollableElement.scrollTop += deltaY;
+            if (isAtScrollLimit(scrollableElement, deltaY)) {
+                // Am Limit: Verhindere Seiten-Scroll
+                e.preventDefault();
+            }
+            // Sonst: Lass natives Scrolling zu (kein preventDefault)
         } else {
             // Blockiere Scrollen außerhalb der Listen
             e.preventDefault();
         }
-
-        touchStartY = touch.clientY;
     }
 
     function handleMouseEnter() {
@@ -2779,13 +3419,11 @@ function setupScrollHandling() {
     }
 
     function setupAllElements() {
-        // Füge auch sidebarElementsDiv zu den zu überwachenden Elementen hinzu
         [
             settingsDiv,
             merchantListDiv,
             wordsListDiv,
-            document.getElementById('wordSuggestionList'),
-            document.getElementById('sidebarElementsDiv')
+            document.getElementById('wordSuggestionList')
         ].forEach(setupUIElement);
     }
 
@@ -2797,22 +3435,6 @@ function setupScrollHandling() {
         document.addEventListener('touchstart', handleTouchStart, { passive: true });
         document.addEventListener('touchmove', handleTouchMove, { passive: false });
     }
-
-    // MutationObserver für dynamisch hinzugefügte UIs
-    const observer = new MutationObserver(mutations => {
-        mutations.forEach(mutation => {
-            if (mutation.addedNodes.length) {
-                // Prüfe auf neu hinzugefügtes Seitenleisten-UI
-                const addedSidebarUI = Array.from(mutation.addedNodes).find(
-                    node => node.id === 'sidebarElementsDiv'
-                );
-                if (addedSidebarUI) {
-                    setupUIElement(addedSidebarUI);
-                }
-            }
-        });
-        setupAllElements();
-    });
 
     observer.observe(document.body, {
         childList: true,
@@ -2830,8 +3452,7 @@ function setupScrollHandling() {
             settingsDiv,
             merchantListDiv,
             wordsListDiv,
-            document.getElementById('wordSuggestionList'),
-            document.getElementById('sidebarElementsDiv')
+            document.getElementById('wordSuggestionList')
         ].forEach(el => {
             if (el?.parentNode) {
                 el.removeEventListener('mouseenter', handleMouseEnter);
@@ -2971,8 +3592,7 @@ function updateSubUIPositions() {
     const settingsRect = settingsDiv.getBoundingClientRect();
     const subUIs = [
         document.getElementById('wordsListDiv'),
-        document.getElementById('merchantListDiv'),
-        document.getElementById('sidebarElementsDiv')
+        document.getElementById('merchantListDiv')
     ];
 
     // Aktualisiere Position für jedes vorhandene Sub-UI
@@ -3021,6 +3641,7 @@ function switchSubUI(newUI) {
     // Update button texts
     const merchantButton = document.getElementById('showMerchantListButton');
     const wordsButton = document.getElementById('showWordsListButton');
+    const usersButton = document.getElementById('showBlockedUsersButton');
 
     if (merchantButton) {
         merchantButton.innerHTML = activeSubUI === 'merchant'
@@ -3034,6 +3655,12 @@ function switchSubUI(newUI) {
             : '<i class="fas fa-list"></i> Wortfilter verwalten';
     }
 
+    if (usersButton) {
+        usersButton.innerHTML = activeSubUI === 'users'
+            ? '<i class="fas fa-times"></i> Benutzerfilter schließen'
+            : '<i class="fas fa-user-slash"></i> Benutzerfilter verwalten';
+    }
+
     return true;
 }
 
@@ -3042,13 +3669,14 @@ function closeActiveSubUI() {
         merchantListDiv?.remove();
     } else if (activeSubUI === 'words') {
         wordsListDiv?.remove();
-    } else if (activeSubUI === 'sidebar') {
-        document.getElementById('sidebarElementsDiv')?.remove();
+    } else if (activeSubUI === 'users') {
+        blockedUsersDiv?.remove();
     }
 
     // Reset button texts
     const merchantButton = document.getElementById('showMerchantListButton');
     const wordsButton = document.getElementById('showWordsListButton');
+    const usersButton = document.getElementById('showBlockedUsersButton');
 
     if (merchantButton) {
         merchantButton.innerHTML = '<i class="fas fa-store"></i> Händlerfilter verwalten';
@@ -3059,6 +3687,10 @@ function closeActiveSubUI() {
         wordsButton.innerHTML = '<i class="fas fa-list"></i> Wortfilter verwalten';
     }
 
+    if (usersButton) {
+        usersButton.innerHTML = '<i class="fas fa-user-slash"></i> Benutzerfilter verwalten';
+    }
+
     activeSubUI = null;
 }
 
@@ -3067,269 +3699,356 @@ function closeActiveSubUI() {
 
 
 
-
 //#region --- 5. Deal-Verarbeitung ---
 // ===== Hauptfunktionen =====
-// Artikel verarbeiten und filtern
-function processArticles() {
-    // Am Anfang der Funktion den aktuellen Status aus Storage laden
-    window.hideCustomBanners = GM_getValue('hideCustomBanners', false);
-    const processedDeals = new Set();
-    const articles = document.querySelectorAll('article.thread--deal, article.thread--voucher');
-    let hiddenCount = 0;
 
-    articles.forEach(article => {
-        // Debug: Test if shouldExcludeArticle is being called
-        const shouldExclude = shouldExcludeArticle(article);
+// Cache für bereits verarbeitete Deals mit maximaler Größe
+const MAX_CACHE_SIZE = 500; // Max 500 Deals im Cache
+const processedDealsCache = new Map();
 
-        if (shouldExclude) {
-            // FIX: Sicherstellen, dass die Anzeige wirklich auf 'none' gesetzt wird
-            article.style.display = 'none';
-            article.setAttribute('data-hidden-by-mydealz-manager', 'true'); // Markieren für Debug-Zwecke
-            hiddenCount++;
-        } else {
-            // Sicherstellen, dass der Artikel sichtbar ist
-            article.style.display = '';
-            article.removeAttribute('data-hidden-by-mydealz-manager');
-        }
-    });
+function addToDealCache(key, value) {
+    // Wenn Cache zu groß, ältesten Eintrag entfernen
+    if (processedDealsCache.size >= MAX_CACHE_SIZE) {
+        const firstKey = processedDealsCache.keys().next().value;
+        processedDealsCache.delete(firstKey);
 
-    document.querySelectorAll('article.thread--type-list').forEach(deal => {
-        // Korrigierter Selektor für die Temperatur
-        const tempElement = deal.querySelector('.cept-vote-temp span');
-        const temperatureText = tempElement ? tempElement.textContent.trim() : null;
-
-        // Extrahiere nur die Zahl aus dem Text
-        const temperatureMatch = temperatureText ? temperatureText.match(/([-+]?\d+)°/) : null;
-        const temperature = temperatureMatch ? parseInt(temperatureMatch[1]) : null;
-
-        const isCold = temperature !== null && temperature < 0;
-
-        // Markiere das Element für bessere Sichtbarkeit im Debug
-        deal.dataset.cold = isCold ? 'true' : 'false';
-
-        if (hideColdDeals && isCold) {
-            deal.style.display = 'none';
-        } else {
-            deal.style.display = ''; // Reset display
-        }
-    });
-
-    // Bestehende Deal-Verarbeitung
-    const deals = document.querySelectorAll('article.thread--deal, article.thread--voucher');
-    deals.forEach(deal => {
-        const dealId = deal.getAttribute('id');
-
-        // Skip wenn bereits verarbeitet
-        if (processedDeals.has(dealId)) return;
-        processedDeals.add(dealId);
-
-        if (hiddenDeals.includes(dealId)) {
-            hideDeal(deal);
-            return;
-        }
-
-        if (shouldExcludeArticle(deal)) {
-            hideDeal(deal);
-            return;
-        }
-
-        deal.style.display = 'block';
-        deal.style.opacity = '1';
-
-        // Custom Banner Handling
-        if (window.hideCustomBanners) {
-            Object.entries(SIDEBAR_ELEMENTS).forEach(([category, items]) => {
-                Object.entries(items).forEach(([key, element]) => {
-                    const elements = document.querySelectorAll(element.selector);
-                    elements.forEach(el => {
-                        const oldDisplay = el.style.display;
-                        el.style.display = element.hidden ? 'none' : '';
-                    });
-                });
+        if (DEBUG.performance.caching) {
+            perfTracker.log('caching', 'eviction', {
+                evictedKey: firstKey,
+                reason: 'MAX_CACHE_SIZE reached',
+                cacheSize: processedDealsCache.size
             });
         }
+    }
+    processedDealsCache.set(key, value);
+    perfTracker.update('caching.size', processedDealsCache.size);
+}
 
-        // Händlername im Titel
+// Artikel verarbeiten und filtern
+function processArticles() {
+    perfTracker.start('processArticles');
+    perfTracker.update('processArticles.calls', 1);
+    perfTracker.resetBatch();
+
+    // Lade blockierte Benutzer für die Filterung
+    const blockedUsers = GM_getValue('blockedUsers', []);
+    if (DEBUG.userBlocking) {
+        console.log('[MDM UserBlock] Processing articles, blocked users:', blockedUsers);
+    }
+
+    const deals = document.querySelectorAll('article.thread--deal, article.thread--voucher');
+
+    if (DEBUG.performance.processing) {
+        perfTracker.log('processing', 'start', { dealCount: deals.length });
+    }
+
+    perfTracker.update('processArticles.articlesProcessed', deals.length);
+
+    // Cache-Größe begrenzen wenn zu viele Einträge
+    if (processedDealsCache.size > MAX_CACHE_SIZE * 1.5) {
+        processedDealsCache.clear();
+        if (DEBUG.performance.caching) {
+            perfTracker.log('caching', 'full-clear', { reason: 'Cache exceeded 1.5x MAX_SIZE' });
+        }
+    }
+
+    // Batch DOM-Updates für bessere Performance
+    const dealsToHide = [];
+    const dealsToShow = [];
+
+    deals.forEach(deal => {
+        const dealId = deal.getAttribute('id') || '';
+
+        if (hiddenDeals.includes(dealId)) {
+            dealsToHide.push(deal);
+            return;
+        }
+
+        // Prüfe ob Deal von blockiertem Benutzer
+        if (blockedUsers.length > 0) {
+            // Normalisiere blockierte User zu Kleinbuchstaben für Vergleich
+            const normalizedBlockedUsers = blockedUsers.map(u => u.toLowerCase());
+            
+            // Methode 1: data-md-author Attribut
+            let username = deal.getAttribute('data-md-author');
+            
+            // Methode 2: User-Link
+            if (!username) {
+                const userLink = deal.querySelector('a[data-t="userLink"]');
+                if (userLink) {
+                    username = userLink.textContent.trim();
+                }
+            }
+            
+            // Methode 3: Span-Text "Veröffentlicht von"
+            if (!username) {
+                const userSpan = deal.querySelector('.overflow--ellipsis.size--all-xs.size--fromW3-s');
+                if (userSpan) {
+                    const match = userSpan.textContent.match(/Veröffentlicht von\s+(\S+)/i);
+                    if (match && match[1]) {
+                        username = match[1];
+                    }
+                }
+            }
+            
+            if (username) {
+                const normalizedUsername = username.toLowerCase();
+                if (normalizedBlockedUsers.includes(normalizedUsername)) {
+                    if (DEBUG.userBlocking) {
+                        console.log('[MDM UserBlock] Hiding deal from blocked user:', { dealId, username: normalizedUsername });
+                    }
+                    dealsToHide.push(deal);
+                    return;
+                }
+            }
+        }
+
+        // Cold Deals Prüfung ZUERST (muss hier sein wegen DOM-Timing)
+        if (hideColdDeals) {
+            const tempElement = deal.querySelector('.cept-vote-temp .overflow--wrap-off') ||
+                               deal.querySelector('.vote-temp .overflow--wrap-off');
+            if (tempElement) {
+                const temperatureText = tempElement.textContent.trim();
+                const temperatureMatch = temperatureText.match(/([-+]?\d+)°/);
+                const temperature = temperatureMatch ? parseInt(temperatureMatch[1]) : null;
+
+                if (temperature !== null && temperature < 0) {
+                    dealsToHide.push(deal);
+                    return;
+                }
+            }
+        }
+
+        // Händler-Prüfung ZUERST (muss hier sein wegen DOM-Timing)
+        if (excludeMerchantsCache.ids.size || excludeMerchantsCache.normalizedNames.size) {
+            const merchantInfo = getArticleMerchantInfo(deal);
+            const { merchantId, merchantName } = merchantInfo;
+
+            if (merchantId && excludeMerchantsCache.ids.has(String(merchantId))) {
+                dealsToHide.push(deal);
+                return;
+            }
+
+            const normalizedMerchantName = merchantName ? normalizeForSearch(merchantName) : '';
+            if (normalizedMerchantName && excludeMerchantsCache.normalizedNames.has(normalizedMerchantName)) {
+                dealsToHide.push(deal);
+                return;
+            }
+        }
+
+        // Cache-Prüfung: Nur neu evaluieren wenn sich Filter geändert haben
+        const cacheKey = `${dealId}_${excludeWords.length}_${maxPrice}`;
+        const cachedResult = processedDealsCache.get(cacheKey);
+
+        if (cachedResult !== undefined) {
+            perfTracker.update('caching.hits', 1);
+            perfTracker.currentBatch.caching.hits++;
+            perfTracker.currentBatch.caching.dealIds.hits.push(dealId);
+
+            if (cachedResult) {
+                dealsToHide.push(deal);
+            } else {
+                dealsToShow.push(deal);
+            }
+            return;
+        }
+
+        perfTracker.update('caching.misses', 1);
+        perfTracker.currentBatch.caching.misses++;
+        perfTracker.currentBatch.caching.dealIds.misses.push(dealId);
+
+        // Nur bei neuem Deal oder geänderten Filtern evaluieren
+        const shouldExclude = shouldExcludeArticle(deal);
+        addToDealCache(cacheKey, shouldExclude);
+
+        if (shouldExclude) {
+            dealsToHide.push(deal);
+            return;
+        }
+
+        dealsToShow.push(deal);
+
         if (window.hideMatchingMerchantNames) {
             const titleElement = deal.querySelector('.thread-title');
             const merchantLink = deal.querySelector('a[data-t="merchantLink"]');
+            const merchantSpan = deal.querySelector('.color--text-TranslucentSecondary.size--all-xs span:last-child');
 
-            if (titleElement && merchantLink) {
-                const merchantName = merchantLink.textContent.trim();
-                const titleLink = titleElement.querySelector('a');
+            if (!titleElement && DEBUG.criticalErrors) {
+                console.warn('[MDM Critical] ⚠ hideMatchingMerchantNames: Selector ".thread-title" returned no element for deal:', dealId);
+            }
 
-                if (titleLink) {
-                    // Speichere ursprünglichen Titel falls noch nicht geschehen
-                    if (!ORIGINAL_TITLES.has(dealId)) {
-                        ORIGINAL_TITLES.set(dealId, titleLink.textContent);
+            if (titleElement) {
+                let merchantName = null;
+                let foundVia = null;
+
+                if (merchantLink) {
+                    merchantName = merchantLink.textContent.trim();
+                    foundVia = 'merchantLink';
+                    if (DEBUG.hideMatchingMerchantNames) {
+                        console.log('[MDM MerchantNames] ✓ Found via a[data-t="merchantLink"]:', merchantName);
                     }
+                } else if (merchantSpan) {
+                    merchantName = merchantSpan.textContent.trim();
+                    foundVia = 'merchantSpan';
+                    if (DEBUG.hideMatchingMerchantNames) {
+                        console.log('[MDM MerchantNames] ✓ Found via span:', merchantName);
+                    }
+                } else if (DEBUG.criticalErrors) {
+                    console.warn('[MDM Critical] ⚠ hideMatchingMerchantNames: Beide Selektoren fehlgeschlagen für deal:', dealId);
+                    console.warn('[MDM Critical]   - a[data-t="merchantLink"]: nicht gefunden');
+                    console.warn('[MDM Critical]   - .color--text-TranslucentSecondary.size--all-xs span:last-child: nicht gefunden');
+                }
 
-                    const originalTitle = ORIGINAL_TITLES.get(dealId) || titleLink.textContent;
-                    const newTitle = removeMerchantNameFromTitle(originalTitle, merchantName);
-                    titleLink.textContent = newTitle;
+                if (merchantName) {
+                    const titleLink = titleElement.querySelector('a');
+                    if (titleLink) {
+                        if (!ORIGINAL_TITLES.has(dealId)) {
+                            ORIGINAL_TITLES.set(dealId, titleLink.textContent);
+                        }
+
+                        const originalTitle = ORIGINAL_TITLES.get(dealId) || titleLink.textContent;
+                        const newTitle = removeMerchantNameFromTitle(originalTitle, merchantName);
+
+                        if (originalTitle !== newTitle) {
+                            titleLink.textContent = newTitle;
+                            perfTracker.update('domUpdates.titleChanges', 1);
+                            perfTracker.currentBatch.domUpdates.titleChanges++;
+                            if (DEBUG.hideMatchingMerchantNames) {
+                                console.log('[MDM MerchantNames] Title changed:', { original: originalTitle, new: newTitle, via: foundVia });
+                            }
+                        }
+                    }
                 }
             }
         } else {
-            // Originaltitel wiederherstellen falls vorhanden
             const titleLink = deal.querySelector('.thread-title a');
-            const dealId = deal.getAttribute('id');
-
             if (titleLink && ORIGINAL_TITLES.has(dealId)) {
                 titleLink.textContent = ORIGINAL_TITLES.get(dealId);
             }
         }
     });
 
-    // Sortierungsspeicher verarbeiten
-    processSortRemembering();
+    // Batch DOM-Updates: Alle auf einmal anwenden für bessere Performance
+    dealsToHide.forEach(deal => hideDeal(deal));
+    dealsToShow.forEach(deal => showDeal(deal));
 
+    // Nur auf der Suchseite Sucheinstellungen verarbeiten
+    if (window.location.pathname === '/search') {
+        processSucheinstellungen();
+    }
+
+    const duration = perfTracker.end('processArticles');
+    perfTracker.update('processArticles.totalTime', duration);
+
+    // Log aggregierte Batch-Daten
+    perfTracker.logBatch();
+
+    if (DEBUG.performance.processing) {
+        perfTracker.log('processing', 'completed', {
+            duration: `${duration.toFixed(2)}ms`,
+            articlesProcessed: deals.length,
+            avgTimePerArticle: deals.length > 0 ? `${(duration / deals.length).toFixed(3)}ms` : '0ms',
+            batchSize: { hidden: dealsToHide.length, shown: dealsToShow.length }
+        });
+    }
 }
 
 // ===== Filterlogik =====
 // Ausschlussprüfung für Artikel
 function shouldExcludeArticle(article) {
-    const titleElement = article.querySelector('.thread-title');
-    if (!titleElement) return false;
 
-    // 2. Quick checks (temperature & price)
-    // Temperature check
-    if (hideColdDeals) {
-        const tempElement = article.querySelector('.cept-vote-temp .overflow--wrap-off');
-        if (tempElement) {
-            const temp = parseInt(tempElement.textContent);
-            if (!isNaN(temp) && temp < 0) return true;
-        }
+    const titleElement = article.querySelector('.thread-title');
+    if (!titleElement) {
+        return false;
     }
 
-    const dealId = article.getAttribute('id');
-
-    // Price check
     if (maxPrice > 0) {
+        perfTracker.start('priceFilter');
+        perfTracker.update('filtering.priceFilter.calls', 1);
+
         const priceSelectors = ['.thread-price', '.text--color-greyShade'];
+        let foundPrice = false;
+        let checkedSelectors = [];
 
         for (const selector of priceSelectors) {
             const priceElement = article.querySelector(selector);
-            if (priceElement) {
-                const priceText = priceElement.textContent.trim();
+            if (!priceElement) {
+                checkedSelectors.push({ selector, found: false });
+                continue;
+            }
 
-                // Ignore percentage discounts
-                if (priceText.includes('%')) {
-                    continue;
-                }
+            checkedSelectors.push({ selector, found: true });
+            foundPrice = true;
 
-                // Ignore negative values (e.g., "-20€")
-                if (priceText.startsWith('-')) {
-                    continue;
-                }
+            const priceText = priceElement.textContent.trim();
 
-                // Check if the text contains a price in € format
-                if (!priceText.includes('€')) {
-                    continue;
-                }
+            if (DEBUG.priceFilter) {
+                console.log('[MDM PriceFilter] Found price element:', { selector, text: priceText });
+            }
 
-                // Extract numeric price - handle European format (47.170,00€)
-                const euroFormatMatch = priceText.match(/([\d.,]+)\s*€/);
-                if (euroFormatMatch) {
-                    let extractedPrice = euroFormatMatch[1];
+            if (priceText.includes('%')) continue;
+            if (priceText.startsWith('-')) continue;
+            if (!priceText.includes('€')) continue;
 
-                    // Remove all dots first (thousand separators)
-                    extractedPrice = extractedPrice.replace(/\./g, '');
-                    // Then replace comma with dot for decimal
-                    extractedPrice = extractedPrice.replace(',', '.');
+            const euroFormatMatch = priceText.match(/([\d.,]+)\s*€/);
+            if (euroFormatMatch) {
+                let extractedPrice = euroFormatMatch[1];
+                extractedPrice = extractedPrice.replace(/\./g, '');
+                extractedPrice = extractedPrice.replace(',', '.');
 
-                    // Hier ist die wichtige Änderung: const hinzufügen
-                    const priceValue = parseFloat(extractedPrice);
+                const priceValue = parseFloat(extractedPrice);
 
-                    if (!isNaN(priceValue) && priceValue > maxPrice) {
-                        return true;
+                if (!isNaN(priceValue) && priceValue > maxPrice) {
+                    perfTracker.update('filtering.priceFilter.hits', 1);
+                    perfTracker.currentBatch.filtering.priceExceeded++;
+
+                    if (DEBUG.priceFilter) {
+                        console.log('[MDM PriceFilter] Price exceeds max:', { price: priceValue, maxPrice });
                     }
+
+                    const duration = perfTracker.end('priceFilter');
+                    perfTracker.update('filtering.priceFilter.totalTime', duration);
+
+                    return true;
                 }
             }
         }
+
+        if (!foundPrice && DEBUG.criticalErrors) {
+            console.warn('[MDM Critical] ⚠ priceFilter: ALLE Preis-Selektoren fehlgeschlagen!');
+            console.warn('[MDM Critical] Checked selectors:', checkedSelectors);
+            console.warn('[MDM Critical] Article ID:', article.id);
+        }
+
+        const duration = perfTracker.end('priceFilter');
+        perfTracker.update('filtering.priceFilter.totalTime', duration);
     }
 
-    // 3. Complex checks
-    // Get title text
     const rawTitle = titleElement.querySelector('a')?.getAttribute('title') || titleElement.innerText;
+    const normalizedTitle = normalizeForSearch(rawTitle);
 
-    // Hilfsfunktion für ß zu ss und ue zu ü Konvertierung
-    function normalizeGerman(text) {
-        return text.toLowerCase()
-            .replace(/ß/g, 'ss')
-            .replace(/ue/g, 'ü');
+    if (!normalizedTitle) {
+        return false;
     }
 
-    // Normalisiere den Titel
-    const processedTitle = normalizeGerman(rawTitle);
+    if (excludeWordCache.length > 0) {
+        perfTracker.start('wordFilter');
+        perfTracker.update('filtering.wordFilter.calls', 1);
 
-    // Check excludeWords
-    if (excludeWords.some(word => {
-        const searchTerm = normalizeGerman(word);
-        const lowerTitle = normalizeGerman(processedTitle);
-
-        // Handle words in brackets like [CB]
-        if (searchTerm.startsWith('[') && searchTerm.endsWith(']')) {
-            const match = lowerTitle.includes(searchTerm);
-            return match;
+        let matched = false;
+        for (const entry of excludeWordCache) {
+            if (entry.matcher(normalizedTitle)) {
+                matched = true;
+                perfTracker.update('filtering.wordFilter.hits', 1);
+                perfTracker.currentBatch.filtering.wordMatches++;
+                break;
+            }
         }
 
-        // Handle words with special characters (+)
-        if (searchTerm.includes('+')) {
-            const match = lowerTitle.includes(searchTerm);
-            return match;
-        }
+        const duration = perfTracker.end('wordFilter');
+        perfTracker.update('filtering.wordFilter.totalTime', duration);
 
-        // Handle multi-word phrases
-        if (searchTerm.includes(' ') || searchTerm.includes('-')) {
-            // Keine Variationen mehr erzeugen - nur exakte Matches erlauben
-            const variations = [searchTerm];
-            const uniqueVariations = [...new Set(variations)];
-
-            return uniqueVariations.some(variant => {
-                if (variant.includes(' ')) {
-                    const words = variant.split(' ').filter(w => w.length > 0);
-                    const firstWord = words[0];
-                    const firstWordBoundaryRegex = new RegExp(`\\b${firstWord}\\b`, 'i');
-                    if (!firstWordBoundaryRegex.test(lowerTitle)) {
-                        return false;
-                    }
-
-                    // ZUSÄTZLICHE PRÜFUNG: Wenn der Suchbegriff eine exakte Teilmenge des Titels ist
-                    const spaceJoinedSearchTerm = words.join(' ');
-                    if (lowerTitle.includes(spaceJoinedSearchTerm)) {
-                        return true;
-                    }
-
-                    // Wenn keine exakte Übereinstimmung gefunden wurde, ist es kein Match
-                    return false;
-                }
-
-                // For hyphenated variations, ensure exact match with proper boundaries
-                if (variant.includes('-')) {
-                    // Exact hyphenated match required
-                    const escapedVariant = variant.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                    const regex = new RegExp(`\\b${escapedVariant}\\b`, 'i');
-                    return regex.test(lowerTitle);
-                }
-
-                return false;
-            });
-        }
-
-        // Für einzelne Wörter: Einfache Wortgrenzen-Prüfung
-        const escapedTerm = searchTerm.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-        const regex = new RegExp(`\\b${escapedTerm}\\b`, 'i');
-        return regex.test(lowerTitle);
-    })) return true;
-
-    // Merchant check
-    const merchantLink = article.querySelector('a[href*="merchant-id="]');
-    if (merchantLink) {
-        const merchantIDMatch = merchantLink.getAttribute('href').match(/merchant-id=(\d+)/);
-        if (merchantIDMatch && excludeMerchantIDs.includes(merchantIDMatch[1])) {
-            return true;
-        }
+        if (matched) return true;
     }
 
     return false;
@@ -3338,25 +4057,37 @@ function shouldExcludeArticle(article) {
 // ===== Deal-Management =====
 // Deal ausblenden
 function hideDeal(deal) {
-    deal.style.cssText = 'display: none !important';
+    if (!deal) return;
+    deal.classList.add('mydealz-manager-hidden');
+    deal.style.setProperty('display', 'none', 'important');
     deal.setAttribute('data-hidden-by-mydealz-manager', 'true');
+
+    perfTracker.update('domUpdates.hideActions', 1);
+    perfTracker.currentBatch.domUpdates.hidden++;
 }
 
-// Letzten versteckten Deal speichern
-function saveLastHiddenDeal() {
-    GM_setValue('lastHiddenDeal', lastHiddenDeal);
-    localStorage.setItem('lastHiddenDeal', JSON.stringify(lastHiddenDeal));
+function showDeal(deal) {
+    if (!deal) return;
+    deal.classList.remove('mydealz-manager-hidden');
+    deal.style.removeProperty('display');
+    deal.style.opacity = '';
+    deal.setAttribute('data-hidden-by-mydealz-manager', 'false');
+
+    perfTracker.update('domUpdates.showActions', 1);
+    perfTracker.currentBatch.domUpdates.shown++;
 }
 
-// Funktion zur Verarbeitung der Sortierung
-function processSortRemembering() {
-    // Wenn Feature deaktiviert ist, lösche gespeicherte Sortierung
-    // und lass mydealz sein Standard-Verhalten nutzen
+// Funktion zum Speichern der Sucheinstellungen
+function processSucheinstellungen() {
+
+    // Wenn Feature deaktiviert ist, lösche gespeicherte Einstellungen
     if (!window.rememberSort) {
-        // Prüfen, ob eine gespeicherte Sortierung existiert und entfernen
+        // Prüfen und entfernen der gespeicherten Einstellungen
         if (localStorage.getItem(PREFERRED_SORT_KEY)) {
             localStorage.removeItem(PREFERRED_SORT_KEY);
-            if (DEBUG) console.log('[MDM Sort] Gespeicherte Sortierung gelöscht (Feature deaktiviert)');
+        }
+        if (localStorage.getItem(PREFERRED_TIMEFRAME_KEY)) {
+            localStorage.removeItem(PREFERRED_TIMEFRAME_KEY);
         }
         return;
     }
@@ -3366,26 +4097,43 @@ function processSortRemembering() {
         // Parameter aus URL auslesen
         const params = new URLSearchParams(window.location.search);
         const currentSort = params.get('sortBy');
+        const currentTimeframe = params.get('time_frame');
 
-        // Wenn eine Sortierung vorhanden ist, speichern
+        // Wenn Sortierung vorhanden ist, speichern
         if (currentSort) {
             localStorage.setItem(PREFERRED_SORT_KEY, currentSort);
-            if (DEBUG) console.log('[MDM Sort] Sortierung gespeichert: ' + currentSort);
-        } else {
-            // Wenn keine Sortierung gesetzt ist, aber eine gespeicherte existiert
-            const savedSort = localStorage.getItem(PREFERRED_SORT_KEY);
+        }
 
-            if (savedSort && !window.location.href.includes('sortBy=')) {
-                // Neue URL mit der gespeicherten Sortierung erstellen
-                let newUrl = window.location.href;
-                const separator = newUrl.includes('?') ? '&' : '?';
-                newUrl += separator + 'sortBy=' + savedSort;
+        // Wenn Zeitraum vorhanden ist, speichern
+        if (currentTimeframe) {
+            localStorage.setItem(PREFERRED_TIMEFRAME_KEY, currentTimeframe);
+        }
 
-                // Umleitung zur neuen URL mit kleiner Verzögerung
-                if (DEBUG) console.log('[MDM Sort] Wende Sortierung an: ' + savedSort);
-                setTimeout(() => {
-                    window.location.href = newUrl;
-                }, 100);
+        // Wenn keine Sortierung/Zeitraum gesetzt ist, aber gespeicherte Einstellungen existieren
+        const savedSort = localStorage.getItem(PREFERRED_SORT_KEY);
+        const savedTimeframe = localStorage.getItem(PREFERRED_TIMEFRAME_KEY);
+
+        // NUR redirecten wenn BEIDE Parameter fehlen (frische Suche vom Formular)
+        // Wenn nur einer fehlt, hat der User ihn bewusst entfernt
+        if ((savedSort || savedTimeframe) &&
+            !params.has('sortBy') && !params.has('time_frame')) {
+
+            // Neue URL mit den gespeicherten Einstellungen erstellen
+            let newUrl = window.location.href;
+            const separator = newUrl.includes('?') ? '&' : '?';
+            const additionalParams = [];
+
+            if (savedSort) {
+                additionalParams.push('sortBy=' + savedSort);
+            }
+
+            if (savedTimeframe) {
+                additionalParams.push('time_frame=' + savedTimeframe);
+            }
+
+            if (additionalParams.length > 0) {
+                newUrl += separator + additionalParams.join('&');
+                window.location.href = newUrl;
             }
         }
     }
@@ -3405,30 +4153,147 @@ function processSortRemembering() {
             if (!window.rememberSort) return;
 
             const savedSort = localStorage.getItem(PREFERRED_SORT_KEY);
+            const savedTimeframe = localStorage.getItem(PREFERRED_TIMEFRAME_KEY);
 
-            if (savedSort) {
-                if (DEBUG) console.log('[MDM Sort] Füge Sortierung zur Suchanfrage hinzu: ' + savedSort);
+            if (savedSort || savedTimeframe) {
 
-                // Prüfen, ob bereits ein sortBy-Feld vorhanden ist
-                let sortByInput = form.querySelector('input[name="sortBy"]');
-
-                // Wenn kein sortBy-Feld existiert, eines erstellen
-                if (!sortByInput) {
-                    sortByInput = document.createElement('input');
-                    sortByInput.type = 'hidden';
-                    sortByInput.name = 'sortBy';
-                    form.appendChild(sortByInput);
+                // Sortierung hinzufügen
+                if (savedSort) {
+                    let sortByInput = form.querySelector('input[name="sortBy"]');
+                    if (!sortByInput) {
+                        sortByInput = document.createElement('input');
+                        sortByInput.type = 'hidden';
+                        sortByInput.name = 'sortBy';
+                        form.appendChild(sortByInput);
+                    }
+                    sortByInput.value = savedSort;
                 }
 
-                // Sortierung setzen
-                sortByInput.value = savedSort;
+                // Zeitraum hinzufügen
+                if (savedTimeframe) {
+                    let timeframeInput = form.querySelector('input[name="time_frame"]');
+                    if (!timeframeInput) {
+                        timeframeInput = document.createElement('input');
+                        timeframeInput.type = 'hidden';
+                        timeframeInput.name = 'time_frame';
+                        form.appendChild(timeframeInput);
+                    }
+                    timeframeInput.value = savedTimeframe;
+                }
             }
         });
     });
 }
 
-//#endregion
+// Funktion zum Ausblenden von User-Deals
+function handleUserBlock(article) {
+    if (DEBUG.userBlocking) {
+        console.log('[MDM UserBlock] handleUserBlock called', { article: article?.id });
+    }
+    
+    let username = null;
+    let foundVia = null;
+    
+    // Methode 1: data-md-author Attribut (zuverlässigste Methode)
+    username = article.getAttribute('data-md-author');
+    if (username) {
+        foundVia = 'data-md-author';
+        if (DEBUG.userBlocking) {
+            console.log('[MDM UserBlock] ✓ Username found via data-md-author:', username);
+        }
+    } else if (DEBUG.criticalErrors) {
+        console.warn('[MDM Critical] ⚠ data-md-author attribute not found on article');
+    }
+    
+    // Methode 2: Span mit "Veröffentlicht von" Text
+    if (!username) {
+        const userSpan = article.querySelector('.overflow--ellipsis.size--all-xs.size--fromW3-s');
+        if (userSpan) {
+            const match = userSpan.textContent.match(/Veröffentlicht von\s+(\S+)/i);
+            if (match && match[1]) {
+                username = match[1];
+                foundVia = 'span-text';
+                if (DEBUG.userBlocking) {
+                    console.log('[MDM UserBlock] ✓ Username found via span text:', username);
+                }
+            } else if (DEBUG.criticalErrors) {
+                console.warn('[MDM Critical] ⚠ Span found but regex did not match. Text:', userSpan.textContent);
+            }
+        } else if (DEBUG.criticalErrors) {
+            console.warn('[MDM Critical] ⚠ Selector ".overflow--ellipsis.size--all-xs.size--fromW3-s" returned no element');
+        }
+    }
+    
+    // Methode 3: User-Link im Header
+    if (!username) {
+        const userLink = article.querySelector('a[data-t="userLink"]');
+        if (userLink) {
+            username = userLink.textContent.trim();
+            foundVia = 'userLink';
+            if (DEBUG.userBlocking) {
+                console.log('[MDM UserBlock] ✓ Username found via userLink:', username);
+            }
+        } else if (DEBUG.criticalErrors) {
+            console.warn('[MDM Critical] ⚠ Selector "a[data-t=\"userLink\"]" returned no element');
+        }
+    }
+    
+    if (!username) {
+        console.error('[MDM Critical] ❌ ALLE Selektoren fehlgeschlagen! Kann Username nicht finden.');
+        console.error('[MDM Critical] Article ID:', article.id);
+        console.error('[MDM Critical] Article HTML (first 500 chars):', article.innerHTML.substring(0, 500));
+        if (DEBUG.userBlocking) {
+            console.log('[MDM UserBlock] Article attributes:', {
+                id: article.id,
+                'data-md-author': article.getAttribute('data-md-author'),
+                'data-md-state': article.getAttribute('data-md-state')
+            });
+        }
+        alert('Benutzerinformation konnte nicht gefunden werden.');
+        return;
+    }
+    
+    // Username normalisieren (Kleinbuchstaben für Vergleich)
+    username = username.toLowerCase();
+    if (DEBUG.userBlocking) {
+        console.log('[MDM UserBlock] Normalized username:', username);
+    }
 
+    // Bestätigungsdialog
+    if (!confirm(`Möchtest du wirklich alle Deals von "${username}" ausblenden?`)) {
+        if (DEBUG.userBlocking) {
+            console.log('[MDM UserBlock] User cancelled blocking');
+        }
+        return;
+    }
+
+    // Lade blockierte Benutzer
+    const blockedUsers = GM_getValue('blockedUsers', []);
+    if (DEBUG.userBlocking) {
+        console.log('[MDM UserBlock] Current blocked users:', blockedUsers);
+    }
+    
+    if (!blockedUsers.includes(username)) {
+        blockedUsers.push(username);
+        GM_setValue('blockedUsers', blockedUsers);
+        if (DEBUG.userBlocking) {
+            console.log('[MDM UserBlock] User added to blocklist:', username);
+            console.log('[MDM UserBlock] Updated blocklist:', blockedUsers);
+        }
+    } else {
+        if (DEBUG.userBlocking) {
+            console.log('[MDM UserBlock] User already in blocklist:', username);
+        }
+    }
+
+    // Aktualisiere die Anzeige
+    processArticles();
+    if (DEBUG.userBlocking) {
+        console.log('[MDM UserBlock] processArticles called to refresh display');
+    }
+}
+
+//#endregion
 
 
 
@@ -3437,28 +4302,18 @@ function processSortRemembering() {
 function init() {
     // ===== 1. Grundeinstellungen und gespeicherte Daten laden =====
     // --- Grundeinstellungen ---
-    hideCustomBanners = GM_getValue('hideCustomBanners', false);
     syncStorage();
     excludeWords = loadExcludeWords();
+	rebuildExcludeWordCache(excludeWords);
     loadSettings();
 
     // --- Deal-Listen ---
     hiddenDeals = GM_getValue('hiddenDeals', []);
     recentHiddenDeals = GM_getValue('recentHiddenDeals', []);
 
-    // --- Letzter versteckter Deal ---
-    lastHiddenDeal = GM_getValue('lastHiddenDeal', null);
-    lastHiddenDealShown = GM_getValue(LAST_HIDDEN_DEAL_SHOWN, false);
-
-    // Automatische Markierung als "angezeigt" wenn kein Deal vorhanden
-    if (!lastHiddenDeal) {
-        lastHiddenDealShown = true;
-        GM_setValue(LAST_HIDDEN_DEAL_SHOWN, true);
-    }
-
     // --- Sortierung merken ---
     window.rememberSort = GM_getValue('rememberSort', true);
-    processSortRemembering();
+    processSucheinstellungen();
 
     // ===== 2. Filter-Einstellungen =====
     // --- Preisfilter ---
@@ -3468,16 +4323,15 @@ function init() {
     hideColdDeals = localStorage.getItem(HIDE_COLD_DEALS_KEY) === 'true';
 
     // ===== 3. Feature-Flags und UI-Status =====
-    // --- Banner und Widgets ---
-    window.hideCustomBanners = hideCustomBanners;
-    updateCustomBannerIcon();
 
     // --- Share Buttons ---
     window.hideShareButtons = GM_getValue('hideShareButtons', false);
+    localStorage.setItem('hideShareButtons', window.hideShareButtons.toString());
     updateShareButtonsVisibility(window.hideShareButtons);
 
     // --- Händlernamen ---
     window.hideMatchingMerchantNames = GM_getValue('hideMatchingMerchantNames', false);
+    localStorage.setItem('hideMatchingMerchantNames', window.hideMatchingMerchantNames.toString());
 
     // ===== 5. System-Initialisierung =====
 
@@ -3485,10 +4339,11 @@ function init() {
     initializeUI();
     initObserver();
 
+    // --- Scroll Handling (nur einmal global initialisieren) ---
+    setupScrollHandling();
 }
 
 //#endregion
-
 
 
 
@@ -3521,14 +4376,29 @@ function backupData() {
         // 1. Daten laden
         const currentWords = loadExcludeWords();
         const currentMerchants = loadExcludeMerchants();
+        const currentBlockedUsers = GM_getValue('blockedUsers', []);
+        
+        if (DEBUG.backup) {
+            console.log('[MDM Backup] Creating backup with data:', {
+                words: currentWords.length,
+                merchants: currentMerchants.length,
+                blockedUsers: currentBlockedUsers.length,
+                blockedUsersList: currentBlockedUsers
+            });
+        }
 
         // 2. Backup-Objekt erstellen
         const backup = {
             excludeWords: currentWords,
             merchantsData: currentMerchants,
+            blockedUsers: currentBlockedUsers,
             maxPrice: maxPrice,
             hideColdDeals: hideColdDeals
         };
+        
+        if (DEBUG.backup) {
+            console.log('[MDM Backup] Backup object created:', backup);
+        }
 
         // 3. Geräte-Erkennung
         let deviceType = "Desktop";
@@ -3593,27 +4463,60 @@ function restoreData(event) {
         try {
             // 3. Daten-Parsing
             const restoredData = JSON.parse(e.target.result);
+            
+            if (DEBUG.backup) {
+                console.log('[MDM Restore] Restored data:', restoredData);
+                console.log('[MDM Restore] Blocked users in backup:', restoredData.blockedUsers);
+            }
 
             // 4. Aktuelle Daten laden
             const currentWords = new Set(loadExcludeWords());
             const currentMerchants = new Map(
                 loadExcludeMerchants().map(m => [m.id, m])
             );
+            const currentBlockedUsers = new Set(GM_getValue('blockedUsers', []));
+            if (DEBUG.backup) {
+                console.log('[MDM Restore] Current blocked users:', Array.from(currentBlockedUsers));
+            }
+            console.log('[MDM Restore] Current blocked users:', Array.from(currentBlockedUsers));
 
-            // 5. Daten zusammenführen
+            // 5. Zähler für neue Einträge initialisieren
+            const changes = {
+                words: 0,
+                merchants: 0,
+                users: 0
+            };
+
+            // 6. Daten zusammenführen
             // --- Wörter ---
-            restoredData.excludeWords.forEach(word => currentWords.add(word));
+            restoredData.excludeWords.forEach(word => {
+                if (!currentWords.has(word)) {
+                    currentWords.add(word);
+                    changes.words++;
+                }
+            });
             const mergedWords = Array.from(currentWords);
 
             // --- Händler ---
             restoredData.merchantsData.forEach(merchant => {
                 if (!currentMerchants.has(merchant.id)) {
                     currentMerchants.set(merchant.id, merchant);
+                    changes.merchants++;
                 }
             });
             const mergedMerchants = Array.from(currentMerchants.values());
 
-            // 6. Daten speichern
+            // --- Blockierte Benutzer (falls im Backup vorhanden) ---
+            if (restoredData.blockedUsers) {
+                restoredData.blockedUsers.forEach(user => {
+                    if (!currentBlockedUsers.has(user)) {
+                        currentBlockedUsers.add(user);
+                        changes.users++;
+                    }
+                });
+            }
+
+            // 7. Daten speichern
             // --- Wortfilter ---
             GM_setValue('excludeWords', mergedWords);
             localStorage.setItem('excludeWords', JSON.stringify(mergedWords));
@@ -3621,6 +4524,10 @@ function restoreData(event) {
 
             // --- Händlerfilter ---
             saveExcludeMerchants(mergedMerchants);
+
+            // --- Blockierte Benutzer ---
+            const mergedBlockedUsers = Array.from(currentBlockedUsers);
+            GM_setValue('blockedUsers', mergedBlockedUsers);
 
             // --- Einstellungen ---
             if (typeof restoredData.maxPrice === 'number' && maxPrice === 0) {
@@ -3633,13 +4540,30 @@ function restoreData(event) {
                 localStorage.setItem('hideColdDeals', hideColdDeals);
             }
 
-            // 7. UI aktualisieren
+            // 8. UI aktualisieren
             if (isSettingsOpen) {
                 updateUITheme();
             }
             processArticles();
 
-            alert('Backup wurde erfolgreich wiederhergestellt.');
+            // 9. Zusammenfassende Meldung erstellen
+            let message = 'Backup wurde erfolgreich wiederhergestellt.\n\nNeue Einträge:';
+
+            if (changes.words > 0) {
+                message += `\n• ${changes.words} neue Wörter`;
+            }
+            if (changes.merchants > 0) {
+                message += `\n• ${changes.merchants} neue Händler`;
+            }
+            if (changes.users > 0) {
+                message += `\n• ${changes.users} neue blockierte Benutzer`;
+            }
+
+            if (changes.words === 0 && changes.merchants === 0 && changes.users === 0) {
+                message += '\nKeine neuen Einträge gefunden.';
+            }
+
+            alert(message);
 
         } catch (error) {
             console.error('Restore error:', error);
@@ -3655,7 +4579,6 @@ function restoreData(event) {
 
 
 
-
 //#region --- 8. Hilfsfunktionen ---
 // ===== Text-Verarbeitung =====
 // --- Händlernamen-Verarbeitung ---
@@ -3665,6 +4588,29 @@ function removeMerchantNameFromTitle(title, merchant) {
     // Normalisiere Händlernamen und hole Konfiguration
     const merchantName = merchant.toLowerCase()
                             .replace('...', '')
+
+    // Wenn der Händlername CamelCase ist (z.B. FrankfurterRundschau, BerlinerMorgenpost)
+    // erstelle eine Version mit Leerzeichen (z.B. "Frankfurter Rundschau", "Berliner Morgenpost")
+    if (/^[A-Z][a-z]+(?:[A-Z][a-z]+)+$/.test(merchant)) {
+        // Teile den CamelCase Namen an Großbuchstaben
+        const spacedVersion = merchant.split(/(?=[A-Z])/).join(' ');
+
+        // Prüfe ob die Version mit Leerzeichen im Titel vorkommt
+        const spacedRegex = new RegExp(`\\b${spacedVersion}\\b`, 'i');
+        if (title.match(spacedRegex)) {
+            title = title.replace(spacedRegex, '');
+            return title.trim();
+        }
+    }
+
+    // NEU: Minimum Länge für Domain-basierte Entfernung
+    const MIN_DOMAIN_LENGTH = 4;
+    if (merchantName.includes('.')) {
+        const domainWithoutExt = merchantName.split('.')[0];
+        if (domainWithoutExt.length < MIN_DOMAIN_LENGTH) {
+            return title;
+        }
+    }
 
     // Spezialfall für eSIM.sm - wir wollen "eSIM" nicht entfernen, da es ein Produktname ist
     if (merchantName === 'esim.sm' && title.toLowerCase().includes('auf esim')) {
@@ -3745,9 +4691,9 @@ function removeMerchantNameFromTitle(title, merchant) {
                     replacements: [],
                     keepBrands: []
                 };
-            case 'TradePub.com':  // Füge zusätzliche Schreibweise hinzu
+            case 'TradePub.com':
                 return {
-                    abbreviations: ['tradepub', 'Tradepub'],  // Beide Schreibweisen
+                    abbreviations: ['tradepub', 'Tradepub'],
                     replacements: [
                         { from: /\s+bei\s+tradepub\.com(?:\s+|$)/i, to: ' ' },
                         { from: /^tradepub\.com:\s*/i, to: '' },
@@ -3782,6 +4728,32 @@ function removeMerchantNameFromTitle(title, merchant) {
                         { from: /\[UberEats\s+(Member\s+Days)\]/i, to: '[$1]' }
                     ],
                     keepBrands: ['Member Days']
+                };
+            case 'Steam':
+                return {
+                    abbreviations: [],
+                    replacements: [
+                        // Behandle [Steam/Something] und [Steam / Something] Format am Anfang
+                        { from: /\[\s*Steam\s*\/\s*([^\]]+)\]/i, to: '[$1]' },
+                        // Generische Steam-Patterns
+                        { from: /\[Steam\]\s*/i, to: '' },
+                        { from: /\s+auf\s+Steam$/i, to: '' },
+                        { from: /\s+bei\s+Steam$/i, to: '' }
+                    ],
+                    keepBrands: []
+                };
+            case 'Zalando':
+                return {
+                    abbreviations: [],
+                    replacements: [
+                        // Spezifisches Pattern für "[Zalando Plus]" Format
+                        { from: /\[Zalando\s+(Plus)\]/i, to: '[$1]' },
+                        // Standardmuster
+                        { from: /\[Zalando\]\s*/i, to: '' },
+                        { from: /\s+bei\s+Zalando$/i, to: '' },
+                        { from: /\s+auf\s+Zalando$/i, to: '' }
+                    ],
+                    keepBrands: ['Plus']
                 };
             default:
                 return { abbreviations: [], replacements: [], keepBrands: [] };
@@ -3854,8 +4826,8 @@ function removeMerchantNameFromTitle(title, merchant) {
     if (merchantName.includes('.') || merchantName.includes('-shop')) {
         // Entferne TLD und mögliche Zusätze wie "-shop"
         const baseName = merchantName
-            .split('.')[0]  // Entferne TLD (.com, .de, etc.)
-            .replace(/-shop$/, '')  // Entferne mögliches "-shop" am Ende
+            .split('.')[0] // Entferne TLD (.com, .de, etc.)
+            .replace(/-shop$/, '') // Entferne mögliches "-shop" am Ende
             .replace(/[^\w\s-]/g, ''); // Entferne alle Sonderzeichen außer Bindestriche und Leerzeichen
 
         merchantVariants.push(baseName);
@@ -3968,42 +4940,50 @@ function cleanup() {
     if (settingsDiv?.parentNode) settingsDiv.remove();
     isSettingsOpen = false;
 
-    // Der wichtige Teil - wenn das UI geschlossen wird und ein Deal ausgeblendet wurde
-    if (lastHiddenDeal && !lastHiddenDealShown) {
-        lastHiddenDealShown = true;
-        GM_setValue(LAST_HIDDEN_DEAL_SHOWN, true);
-    }
-
     // Add word suggestion list cleanup
     const suggestionList = document.getElementById('wordSuggestionList');
     if (suggestionList) {
         suggestionList.remove();
     }
 
-    // Close merchant & words lists with state logging
+    // Close all sub-UIs with state logging
     if (merchantListDiv?.parentNode) {
         merchantListDiv.remove();
     }
     if (wordsListDiv?.parentNode) {
         wordsListDiv.remove();
     }
-
-    // Schließe auch das Sidebar Elements UI wenn vorhanden
-    const sidebarElementsDiv = document.getElementById('sidebarElementsDiv');
-    if (sidebarElementsDiv?.parentNode) {
-        sidebarElementsDiv.remove();
+    if (blockedUsersDiv?.parentNode) {
+        blockedUsersDiv.remove();
     }
 
     // Reset UI states with logging
     if (activeSubUI) {
-        const btn = document.getElementById(`show${activeSubUI === 'merchant' ? 'Merchant' : 'Words'}ListButton`);
-        if (btn) {
-            btn.innerHTML = activeSubUI === 'merchant' ?
-                '<i class="fas fa-store"></i> Händlerfilter verwalten' :
-            '<i class="fas fa-list"></i> Wortfilter verwalten';
-            btn.removeAttribute('data-processing');
+        const buttonMappings = {
+            merchant: {
+                id: 'showMerchantListButton',
+                html: '<i class="fas fa-store"></i> Händlerfilter verwalten'
+            },
+            words: {
+                id: 'showWordsListButton',
+                html: '<i class="fas fa-list"></i> Wortfilter verwalten'
+            },
+            users: {
+                id: 'showBlockedUsersButton',
+                html: '<i class="fas fa-user-slash"></i> Benutzerfilter verwalten'
+            }
+        };
+
+        const buttonConfig = buttonMappings[activeSubUI];
+        if (buttonConfig) {
+            const btn = document.getElementById(buttonConfig.id);
+            if (btn) {
+                btn.innerHTML = buttonConfig.html;
+                btn.removeAttribute('data-processing');
+            }
         }
     }
+
     activeSubUI = null;
     dealThatOpenedSettings = null; // Reset auch den aktiven Deal
 
@@ -4018,7 +4998,6 @@ function cleanup() {
 }
 
 //#endregion
-
 
 
 
@@ -4137,7 +5116,6 @@ function updateAllUIThemes() {
 
 
 
-
 //#region --- 10. Button-Management ---
 
 function addSettingsButton() {
@@ -4188,22 +5166,30 @@ function addSettingsButton() {
         deal.setAttribute('data-settings-added', 'true');
 
         settingsBtn.onclick = (e) => {
+
+            // Visuelles Feedback SOFORT
+            e.target.style.opacity = '0.5';
+
             e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
 
             if (isSettingsOpen) {
                 if (dealThatOpenedSettings === deal) {
                     cleanup();
+                    e.target.style.opacity = '';
                 } else {
-                    // Komplett neues UI erstellen statt nur den Button zu aktualisieren
                     cleanup();
                     dealThatOpenedSettings = deal;
-                    createSettingsUI(); // Dies erstellt das UI in der korrekten Reihenfolge
+                    createSettingsUI();
+                    e.target.style.opacity = '';
                 }
             } else {
                 dealThatOpenedSettings = deal;
                 createSettingsUI();
+                e.target.style.opacity = '';
             }
+
             return false;
         };
     });
@@ -4299,21 +5285,6 @@ function addHideButtons() {
                     hideButtonContainer.style.display = 'block';
                 } else {
                     const dealId = deal.getAttribute('id');
-                    const dealTitle = deal.querySelector('.thread-title')?.textContent.trim() || 'Unbekannter Deal';
-
-                    // Aktuellen Deal speichern
-                    lastHiddenDeal = {
-                        id: dealId,
-                        title: dealTitle,
-                        timestamp: Date.now()
-                    };
-
-                    // "Deal wurde angezeigt" auf false setzen
-                    lastHiddenDealShown = false;
-                    GM_setValue(LAST_HIDDEN_DEAL_SHOWN, false);
-
-                    // Speichern des letzten ausgeblendeten Deals
-                    saveLastHiddenDeal();
 
                     hiddenDeals.push(dealId);
                     saveHiddenDeals();
@@ -4340,20 +5311,7 @@ function addHideButtons() {
                 e.preventDefault();
                 e.stopPropagation();
                 const dealId = deal.getAttribute('id');
-                const dealTitle = deal.querySelector('.thread-title')?.textContent.trim() || 'Unbekannter Deal';
 
-                // Aktuellen Deal speichern
-                lastHiddenDeal = {
-                    id: dealId,
-                    title: dealTitle,
-                    timestamp: Date.now()
-                };
-
-                // "Deal wurde angezeigt" auf false setzen und persistieren
-                lastHiddenDealShown = false;
-                GM_setValue(LAST_HIDDEN_DEAL_SHOWN, false);
-
-                saveLastHiddenDeal();
                 hiddenDeals.push(dealId);
                 saveHiddenDeals();
                 hideDeal(deal);
@@ -4421,24 +5379,7 @@ function addMerchantPageHideButton() {
     merchantBanner.appendChild(hideButtonContainer);
 }
 
-// Helfer-Funktion, um den Zustand der Toggle-Buttons zu aktualisieren
-function updateToggleButtonsState() {
-    const buttons = document.querySelectorAll('.toggle-sidebar-element');
-    buttons.forEach(button => {
-        const key = button.dataset.key;
-        if (key && SIDEBAR_ELEMENTS[key]) {
-            const element = SIDEBAR_ELEMENTS[key];
-            const icon = button.querySelector('i');
-            if (icon) {
-                icon.className = `fas ${element.hidden ? 'fa-eye-slash' : 'fa-eye'}`;
-                icon.setAttribute('aria-label', element.hidden ? 'Element versteckt' : 'Element sichtbar');
-            }
-        }
-    });
-}
-
 //#endregion
-
 
 
 
@@ -4460,8 +5401,14 @@ if (document.readyState === 'loading') {
     saveExcludeMerchants(merchants);
 })();
 
-//#endregion
+// DOM-Ready Handler
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    init();
+}
 
+//#endregion
 
 
 
@@ -4477,13 +5424,15 @@ function initializeUI() {
 
 // Observer Initialisierung
 function initObserver() {
+    combinedObserver.disconnect();
     observer.disconnect();
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
 
-    // Sofortige Verarbeitung
+    observerTargets.delete(observer);
+    observerTargets.delete(combinedObserver);
+
+    observeDealMutations(observer);
+    observeDealMutations(combinedObserver);
+
     requestAnimationFrame(() => {
         processArticles();
         addSettingsButton();
@@ -4506,7 +5455,6 @@ function registerMenuCommands() {
 }
 
 //#endregion
-
 
 
 
@@ -4553,11 +5501,9 @@ setupClickOutsideHandler() - Konfiguriert Außenbereich-Klicks
 createSuggestionClickHandler() - Erstellt Handler für Wortvorschläge
 registerMenuCommands() - Registriert Script-Manager Menüeinträge
 saveHiddenDeals() - Speichert ausgeblendete Deals
-saveLastHiddenDeal() - Speichert zuletzt ausgeblendeten Deal
 initializeUI() - Initialisiert Benutzeroberfläche
 initObserver() - Initialisiert DOM-Beobachter
 addMerchantPageHideButton() - Fügt Händler-Ausblenden-Button hinzu
-injectDealFilters() - Fügt Deal-Filter in die UI ein
 
 ===================================================================================
 */
