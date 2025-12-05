@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         mydealz Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.17.2_251205_1248
+// @version      1.17.2_251205_1332
 // @description  Deals gezielt ausblenden mittels X Button, Filtern nach Händlern und Wörtern im Titel. Teure und kalte Deals ausblenden.
 // @author       Flo (https://www.mydealz.de/profile/Basics0119) (https://github.com/9jS2PL5T) & Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister) (https://github.com/grapefruit89)
 // @license      MIT
@@ -403,6 +403,105 @@ function normalizeForSearch(text) {
     normalized = normalized.replace(/\s+/g, ' ').trim();
 
     return normalized;
+}
+
+function formatTimestamp(date = new Date()) {
+    const pad = (n) => n.toString().padStart(2, '0');
+    const day = pad(date.getDate());
+    const month = pad(date.getMonth() + 1);
+    const year = date.getFullYear();
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    return `${day}.${month}.${year} ${hours}:${minutes}`;
+}
+
+function pruneTimestampMap(mapObj, allowedKeys) {
+    let changed = false;
+    const allowSet = new Set(allowedKeys);
+    Object.keys(mapObj).forEach(key => {
+        if (!allowSet.has(key)) {
+            delete mapObj[key];
+            changed = true;
+        }
+    });
+    return changed;
+}
+
+function ensureWordTimestamps(words, createMissing = false) {
+    let changed = false;
+    const now = formatTimestamp();
+    const legacyTimestamp = GM_getValue('mdm_legacy_timestamp');
+    words.forEach(word => {
+        const key = normalizeForSearch(word);
+        if (!wordAddedAt[key]) {
+            if (createMissing) {
+                // Neue Einträge: Exakter aktueller Timestamp
+                wordAddedAt[key] = { timestamp: now, isLegacy: false };
+                changed = true;
+            } else {
+                // Alte Einträge: Legacy-Timestamp (ungenau, "vor dem")
+                wordAddedAt[key] = { timestamp: legacyTimestamp, isLegacy: true };
+                changed = true;
+            }
+        }
+    });
+    const removed = pruneTimestampMap(wordAddedAt, words.map(normalizeForSearch));
+    if (changed || removed) {
+        GM_setValue('wordAddedAt', wordAddedAt);
+    }
+}
+
+function ensureMerchantTimestamps(merchants, createMissing = false) {
+    let changed = false;
+    const now = formatTimestamp();
+    const legacyTimestamp = GM_getValue('mdm_legacy_timestamp');
+    merchants.forEach(merchant => {
+        const key = merchant?.id !== undefined && merchant?.id !== null
+            ? String(merchant.id)
+            : normalizeForSearch(merchant?.name || '');
+        if (key && !merchantAddedAt[key]) {
+            if (createMissing) {
+                // Neue Einträge: Exakter aktueller Timestamp
+                merchantAddedAt[key] = { timestamp: now, isLegacy: false };
+                changed = true;
+            } else {
+                // Alte Einträge: Legacy-Timestamp (ungenau, "vor dem")
+                merchantAddedAt[key] = { timestamp: legacyTimestamp, isLegacy: true };
+                changed = true;
+            }
+        }
+    });
+    const allowedKeys = merchants.map(m => m?.id !== undefined && m?.id !== null
+        ? String(m.id)
+        : normalizeForSearch(m?.name || '')).filter(Boolean);
+    const removed = pruneTimestampMap(merchantAddedAt, allowedKeys);
+    if (changed || removed) {
+        GM_setValue('merchantAddedAt', merchantAddedAt);
+    }
+}
+
+function ensureUserTimestamps(users, createMissing = false) {
+    let changed = false;
+    const now = formatTimestamp();
+    const legacyTimestamp = GM_getValue('mdm_legacy_timestamp');
+    users.forEach(user => {
+        const key = (user || '').toLowerCase();
+        if (key && !userAddedAt[key]) {
+            if (createMissing) {
+                // Neue Einträge: Exakter aktueller Timestamp
+                userAddedAt[key] = { timestamp: now, isLegacy: false };
+                changed = true;
+            } else {
+                // Alte Einträge: Legacy-Timestamp (ungenau, "vor dem")
+                userAddedAt[key] = { timestamp: legacyTimestamp, isLegacy: true };
+                changed = true;
+            }
+        }
+    });
+    const removed = pruneTimestampMap(userAddedAt, users.map(u => (u || '').toLowerCase()));
+    if (changed || removed) {
+        GM_setValue('userAddedAt', userAddedAt);
+    }
 }
 
 function findDealContainer() {
@@ -843,10 +942,25 @@ let recentHiddenDeals = [];
 
 // --- Sortier-States für Filterlisten ---
 let listSortStates = {
-    words: { mode: 'added', ascending: false }, // Standard: Neueste zuerst
+    words: { mode: 'added', ascending: false }, // Standard: Neu → Alt entspricht Speicher-Reihenfolge
     merchants: { mode: 'added', ascending: false },
     users: { mode: 'added', ascending: false }
 };
+
+// --- Timestamps für Filtereinträge ---
+let wordAddedAt = GM_getValue('wordAddedAt', {});       // key: normalized word
+let merchantAddedAt = GM_getValue('merchantAddedAt', {}); // key: merchant id (string)
+let userAddedAt = GM_getValue('userAddedAt', {});         // key: username lowercased
+
+// --- Legacy Timestamp (für Einträge aus älteren Script-Versionen ohne Timestamp) ---
+// Wird einmalig beim ersten Laden des Scripts in dieser Version gesetzt und bleibt dann dauerhaft
+// Dies wird verwendet, um alte Einträge zu markieren mit "Hinzugefügt VOR DEM [Datum]" (ungenau)
+// während neue Einträge mit "Hinzugefügt AM [Datum]" (genau) markiert werden
+if (!GM_getValue('mdm_legacy_timestamp_initialized')) {
+    const legacyTimestamp = formatTimestamp();
+    GM_setValue('mdm_legacy_timestamp', legacyTimestamp);
+    GM_setValue('mdm_legacy_timestamp_initialized', true);
+}
 //#endregion
 
 
@@ -885,18 +999,18 @@ function throttle(func, limit) {
 // === Sortierung ===
 // Zentrale Sortierfunktion für Listen
 function sortFilterList(list, mode, ascending = true) {
-    let sorted;
     if (mode === 'alphabetical') {
-        sorted = [...list].sort((a, b) => {
+        const sorted = [...list].sort((a, b) => {
             const valA = (a.name || a.word || a.username || a).toString().toLowerCase();
             const valB = (b.name || b.word || b.username || b).toString().toLowerCase();
             return valA.localeCompare(valB, 'de', { sensitivity: 'base' });
         });
-    } else { // 'added' - Original-Reihenfolge (wie gespeichert)
-        sorted = [...list];
+        return ascending ? sorted : sorted.reverse();
     }
-    if (!ascending) sorted.reverse();
-    return sorted;
+
+    // mode === 'added': Preserve stored order = Neu → Alt; flip only when explicitly requested
+    const addedOrder = [...list];
+    return ascending ? addedOrder.reverse() : addedOrder;
 }
 
 // Liefert Theme-spezifische Farben basierend auf aktuellem Theme
@@ -1226,7 +1340,7 @@ async function syncStorage() {
 
 // ===== Wortfilter-Verwaltung =====
 // Speichern von Wortfiltern
-function saveExcludeWords(words) {
+function saveExcludeWords(words, createMissingTimestamps = false) {
     // Normalisiere Groß-/Kleinschreibung und entferne Duplikate
     const normalizedWords = words.reduce((acc, word) => {
         const lowerWord = word.toLowerCase();
@@ -1239,6 +1353,8 @@ function saveExcludeWords(words) {
 
     excludeWords = normalizedWords;
     rebuildExcludeWordCache(excludeWords);
+
+    ensureWordTimestamps(excludeWords, createMissingTimestamps);
 
     // Cache leeren wenn Filter sich ändern
     processedDealsCache.clear();
@@ -1262,6 +1378,8 @@ function loadExcludeWords() {
     // Show final result
     const result = gmWords.length > 0 ? gmWords : lsWords;
 
+    ensureWordTimestamps(result, false);
+
     return result;
 }
 
@@ -1274,12 +1392,14 @@ function saveHiddenDeals() {
 
 // ===== Händler-Verwaltung =====
 // Speichern von Händlerfiltern
-function saveExcludeMerchants(merchantsData) {
+function saveExcludeMerchants(merchantsData, createMissingTimestamps = false) {
     const validMerchants = merchantsData.filter(m =>
                                                 m && typeof m.id !== 'undefined' && m.id !== null &&
                                                 typeof m.name !== 'undefined' && m.name !== null
                                                );
     const ids = validMerchants.map(m => m.id);
+
+    ensureMerchantTimestamps(validMerchants, createMissingTimestamps);
 
     GM_setValue('excludeMerchantIDs', ids);
     GM_setValue('excludeMerchantsData', validMerchants);
@@ -1306,11 +1426,15 @@ function loadExcludeMerchants() {
                                                 m.name !== null
                                                );
 
+    ensureMerchantTimestamps(validMerchants, false);
+
     // Convert legacy IDs if needed
     if (validMerchants.length === 0 && legacyIds.length > 0) {
-        return legacyIds
+        const legacyMerchants = legacyIds
             .filter(id => id && typeof id !== 'undefined')
             .map(id => ({ id, name: id }));
+        ensureMerchantTimestamps(legacyMerchants);
+        return legacyMerchants;
     }
 
     return validMerchants;
@@ -1970,6 +2094,11 @@ function createSettingsUI() {
 
             if (newWord && !wordExists) {
                 excludeWords.unshift(newWord); // Füge neues Wort zur bestehenden Liste hinzu
+
+                const normalizedNew = normalizeForSearch(newWord);
+                wordAddedAt[normalizedNew] = formatTimestamp();
+                GM_setValue('wordAddedAt', wordAddedAt);
+
                 saveExcludeWords(excludeWords);
                 newWordInput.value = '';
                 processArticles();
@@ -2045,6 +2174,10 @@ function createSettingsUI() {
             const merchantsData = loadExcludeMerchants();
             if (!merchantsData.some(m => m.id === merchantID)) {
                 merchantsData.unshift({ id: merchantID, name: merchantName });
+                const key = String(merchantID);
+                merchantAddedAt[key] = formatTimestamp();
+                GM_setValue('merchantAddedAt', merchantAddedAt);
+
                 saveExcludeMerchants(merchantsData);
                 processArticles();
                 cleanup(); // Close settings UI
@@ -2113,7 +2246,11 @@ function createSettingsUI() {
                 if (word && word.length > 0) {
                     // Add to excludeWords if not already in the list
                     if (!excludeWords.includes(word)) {
-                        excludeWords.push(word);
+                        excludeWords.unshift(word);
+                        const normalizedNew = normalizeForSearch(word);
+                        wordAddedAt[normalizedNew] = formatTimestamp();
+                        GM_setValue('wordAddedAt', wordAddedAt);
+
                         saveExcludeWords(excludeWords);
                         processArticles();
                     }
@@ -2459,45 +2596,45 @@ function makeDraggable(element) {
     // Resize-Handler für Fenstergrößenänderungen
     const handleResize = () => {
         if (!element || !element.parentElement) return;
-        
+
         const rect = element.getBoundingClientRect();
         const vw = window.innerWidth;
         const vh = window.innerHeight;
-        
+
         let newLeft = rect.left;
         let newTop = rect.top;
         let needsUpdate = false;
-        
+
         // Prüfe rechten Rand
         if (rect.right > vw) {
             newLeft = Math.max(0, vw - rect.width);
             needsUpdate = true;
         }
-        
+
         // Prüfe unteren Rand
         if (rect.bottom > vh) {
             newTop = Math.max(0, vh - rect.height);
             needsUpdate = true;
         }
-        
+
         // Prüfe linken Rand
         if (rect.left < 0) {
             newLeft = 0;
             needsUpdate = true;
         }
-        
+
         // Prüfe oberen Rand
         if (rect.top < 0) {
             newTop = 0;
             needsUpdate = true;
         }
-        
+
         // Position aktualisieren falls nötig
         if (needsUpdate) {
             element.style.left = newLeft + 'px';
             element.style.top = newTop + 'px';
             element.style.transform = 'none';
-            
+
             // Aktualisierte Position speichern
             GM_setValue('mdmSettingsPos', {
                 left: newLeft,
@@ -2505,7 +2642,7 @@ function makeDraggable(element) {
             });
         }
     };
-    
+
     // Resize-Event-Listener hinzufügen
     window.addEventListener('resize', handleResize);
 
@@ -2606,7 +2743,25 @@ function createMerchantListUI() {
     const sortState = listSortStates.merchants;
     const currentMerchants = sortFilterList(loadedMerchants, sortState.mode, sortState.ascending);
 
-    const merchantListHTML = currentMerchants.map(merchant => `
+    const merchantListHTML = currentMerchants.map(merchant => {
+        const key = merchant?.id !== undefined && merchant?.id !== null
+            ? String(merchant.id)
+            : normalizeForSearch(merchant?.name || '');
+        let title;
+        if (key && merchantAddedAt[key]) {
+            const data = merchantAddedAt[key];
+            if (typeof data === 'object') {
+                // Neues Format mit { timestamp, isLegacy }
+                const prefix = data.isLegacy ? 'Hinzugefügt vor dem' : 'Hinzugefügt am';
+                title = `${prefix} ${data.timestamp}`;
+            } else {
+                // Altes Format (nur Timestamp-String) - behandle als Legacy
+                title = `Hinzugefügt vor dem ${data}`;
+            }
+        } else {
+            title = 'Hinzugefügt am Unbekannt';
+        }
+        return `
         <div class="merchant-item" style="
             display: flex;
             justify-content: space-between;
@@ -2617,7 +2772,7 @@ function createMerchantListUI() {
             color: ${colors.text};
             border: 1px solid ${colors.border};
             border-radius: 3px;">
-            <span>${merchant.name}</span>
+            <span title="${title}">${merchant.name}</span>
             <button class="delete-merchant" data-id="${merchant.id}" style="
                 background: none;
                 border: none;
@@ -2633,7 +2788,8 @@ function createMerchantListUI() {
                 </svg>
             </button>
         </div>
-    `).join('');
+    `;
+    }).join('');
 
     merchantListDiv.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -2802,7 +2958,7 @@ function createMerchantListUI() {
     // Sortier-Dropdown Event-Listener
     const merchantsDropdownBtn = document.getElementById('sortMerchantsDropdown');
     const merchantsDropdownMenu = document.getElementById('sortMerchantsMenu');
-    
+
     merchantsDropdownBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         merchantsDropdownMenu.style.display = merchantsDropdownMenu.style.display === 'none' ? 'block' : 'none';
@@ -2870,6 +3026,8 @@ function createMerchantListUI() {
     document.getElementById('clearMerchantListButton').addEventListener('click', () => {
         if (confirm('Möchten Sie wirklich alle Händler aus der Liste entfernen?')) {
             saveExcludeMerchants([]);
+            merchantAddedAt = {};
+            GM_setValue('merchantAddedAt', merchantAddedAt);
             document.getElementById('merchantList').innerHTML = '';
             excludeMerchantIDs = [];
             rebuildExcludeMerchantCache([]);
@@ -2913,7 +3071,21 @@ function createExcludeWordsUI() {
     const sortState = listSortStates.words;
     const currentWords = sortFilterList(loadedWords, sortState.mode, sortState.ascending);
 
-    const wordsListHTML = currentWords.map(word => `
+    const wordsListHTML = currentWords.map(word => {
+        const normalized = normalizeForSearch(word);
+        const data = wordAddedAt[normalized];
+        let title;
+        if (data && typeof data === 'object') {
+            // Neues Format mit { timestamp, isLegacy }
+            const prefix = data.isLegacy ? 'Hinzugefügt vor dem' : 'Hinzugefügt am';
+            title = `${prefix} ${data.timestamp}`;
+        } else if (data) {
+            // Altes Format (nur Timestamp-String) - behandle als Legacy
+            title = `Hinzugefügt vor dem ${data}`;
+        } else {
+            title = 'Hinzugefügt am Unbekannt';
+        }
+        return `
         <div class="word-item" style="
             display: flex;
             justify-content: space-between;
@@ -2924,7 +3096,7 @@ function createExcludeWordsUI() {
             color: ${colors.text};
             border: 1px solid ${colors.border};
             border-radius: 3px;">
-            <span style="word-break: break-word;">${word}</span>
+            <span style="word-break: break-word;" title="${title}">${word}</span>
             <button class="delete-word" data-word="${word}" style="
                 background: none;
                 border: none;
@@ -2940,7 +3112,8 @@ function createExcludeWordsUI() {
                 </svg>
             </button>
         </div>
-    `).join('');
+    `;
+    }).join('');
 
     wordsListDiv.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -3109,7 +3282,7 @@ function createExcludeWordsUI() {
     // Sortier-Dropdown Event-Listener
     const wordsDropdownBtn = document.getElementById('sortWordsDropdown');
     const wordsDropdownMenu = document.getElementById('sortWordsMenu');
-    
+
     wordsDropdownBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         wordsDropdownMenu.style.display = wordsDropdownMenu.style.display === 'none' ? 'block' : 'none';
@@ -3177,6 +3350,8 @@ function createExcludeWordsUI() {
     document.getElementById('clearWordsListButton').addEventListener('click', () => {
         if (confirm('Möchten Sie wirklich alle Wörter aus der Liste entfernen?')) {
             saveExcludeWords([]);
+            wordAddedAt = {};
+            GM_setValue('wordAddedAt', wordAddedAt);
             document.getElementById('wordsList').innerHTML = '';
             excludeWords = [];
             processArticles();
@@ -3223,13 +3398,30 @@ function createBlockedUsersUI() {
 
     // Lade blockierte Benutzer
     const loadedUsers = GM_getValue('blockedUsers', []);
+    ensureUserTimestamps(loadedUsers, false);
     const sortState = listSortStates.users;
     const blockedUsers = sortFilterList(loadedUsers, sortState.mode, sortState.ascending);
     if (DEBUG.userBlocking) {
         console.log('[MDM UserBlock] Loading blocked users UI, count:', blockedUsers.length, 'users:', blockedUsers);
     }
 
-    const blockedUsersHTML = blockedUsers.map(user => `
+    const blockedUsersHTML = blockedUsers.map(user => {
+        const key = (user || '').toLowerCase();
+        let title;
+        if (key && userAddedAt[key]) {
+            const data = userAddedAt[key];
+            if (typeof data === 'object') {
+                // Neues Format mit { timestamp, isLegacy }
+                const prefix = data.isLegacy ? 'Hinzugefügt vor dem' : 'Hinzugefügt am';
+                title = `${prefix} ${data.timestamp}`;
+            } else {
+                // Altes Format (nur Timestamp-String) - behandle als Legacy
+                title = `Hinzugefügt vor dem ${data}`;
+            }
+        } else {
+            title = 'Hinzugefügt am Unbekannt';
+        }
+        return `
         <div class="user-item" style="
             display: flex;
             justify-content: space-between;
@@ -3240,7 +3432,7 @@ function createBlockedUsersUI() {
             color: ${colors.text};
             border: 1px solid ${colors.border};
             border-radius: 3px;">
-            <span>${user}</span>
+            <span title="${title}">${user}</span>
             <button class="delete-user" data-user="${user}" style="
                 background: none;
                 border: none;
@@ -3256,7 +3448,8 @@ function createBlockedUsersUI() {
                 </svg>
             </button>
         </div>
-    `).join('');
+    `;
+    }).join('');
 
     blockedUsersDiv.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -3424,7 +3617,7 @@ function createBlockedUsersUI() {
     // Sortier-Dropdown Event-Listener
     const usersDropdownBtn = document.getElementById('sortUsersDropdown');
     const usersDropdownMenu = document.getElementById('sortUsersMenu');
-    
+
     if (usersDropdownBtn && usersDropdownMenu) {
         usersDropdownBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -3492,6 +3685,8 @@ function createBlockedUsersUI() {
     document.getElementById('clearBlockedUsersButton').addEventListener('click', () => {
         if (confirm('Möchten Sie wirklich alle Benutzer aus der Liste entfernen?')) {
             GM_setValue('blockedUsers', []);
+            userAddedAt = {};
+            GM_setValue('userAddedAt', userAddedAt);
             document.getElementById('usersList').innerHTML = '';
             processArticles();
 
@@ -3516,6 +3711,12 @@ function createBlockedUsersUI() {
             // Update blockedUsers array
             const updatedUsers = blockedUsers.filter(user => user !== userToDelete);
             GM_setValue('blockedUsers', updatedUsers);
+
+            const normalized = (userToDelete || '').toLowerCase();
+            if (normalized && userAddedAt[normalized]) {
+                delete userAddedAt[normalized];
+                GM_setValue('userAddedAt', userAddedAt);
+            }
 
             // Update UI
             userItem.remove();
@@ -3558,7 +3759,22 @@ function updateActiveLists() {
                     border: 1px solid ${colors.border};
                     border-radius: 3px;">
                     <div style="display: flex; flex-direction: column;">
-                        <span>${merchant.name}</span>
+                        <span title="${(() => {
+                            const key = merchant?.id !== undefined && merchant?.id !== null ? String(merchant.id) : normalizeForSearch(merchant?.name || '');
+                            let title;
+                            if (key && merchantAddedAt[key]) {
+                                const data = merchantAddedAt[key];
+                                if (typeof data === 'object') {
+                                    const prefix = data.isLegacy ? 'Hinzugefügt vor dem' : 'Hinzugefügt am';
+                                    title = `${prefix} ${data.timestamp}`;
+                                } else {
+                                    title = `Hinzugefügt vor dem ${data}`;
+                                }
+                            } else {
+                                title = 'Hinzugefügt am Unbekannt';
+                            }
+                            return title;
+                        })()}">${merchant.name}</span>
                         <span style="color: ${colors.text}; opacity: 0.7; font-size: 0.8em;">ID: ${merchant.id}</span>
                     </div>
                     <button class="delete-merchant" data-id="${merchant.id}" style="
@@ -3573,7 +3789,6 @@ function updateActiveLists() {
 
             // Event Listener neu hinzufügen
             document.querySelectorAll('.delete-merchant').forEach(button => {
-
                 button.addEventListener('click', function(e) {
                     handleMerchantDelete(e);
                 });
@@ -3585,7 +3800,22 @@ function updateActiveLists() {
             const currentWords = loadExcludeWords();
             wordsList.innerHTML = currentWords.map(word => `
                 <div class="word-item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 5px; background: #f0f0f0; border-radius: 3px;">
-                    <span style="word-break: break-word;">${word}</span>
+                    <span style="word-break: break-word;" title="${(() => {
+                        const key = normalizeForSearch(word);
+                        let title;
+                        if (wordAddedAt[key]) {
+                            const data = wordAddedAt[key];
+                            if (typeof data === 'object') {
+                                const prefix = data.isLegacy ? 'Hinzugefügt vor dem' : 'Hinzugefügt am';
+                                title = `${prefix} ${data.timestamp}`;
+                            } else {
+                                title = `Hinzugefügt vor dem ${data}`;
+                            }
+                        } else {
+                            title = 'Hinzugefügt am Unbekannt';
+                        }
+                        return title;
+                    })()}">${word}</span>
                     <button class="delete-word" data-word="${word}" style="background: none; border: none; cursor: pointer; color: #666;">
                         <i class="fas fa-times"></i>
                     </button>
@@ -3994,6 +4224,12 @@ function handleWordDelete(e) {
     excludeWords = excludeWords.filter(word => word !== wordToDelete);
     saveExcludeWords(excludeWords);
 
+    const normalized = normalizeForSearch(wordToDelete);
+    if (normalized && wordAddedAt[normalized]) {
+        delete wordAddedAt[normalized];
+        GM_setValue('wordAddedAt', wordAddedAt);
+    }
+
     // Get search state and counts
     const searchInput = document.getElementById('wordSearch');
     const searchTerm = searchInput?.value.trim().toLowerCase();
@@ -4038,6 +4274,11 @@ function handleMerchantDelete(e) {
     const merchantsData = loadExcludeMerchants();
     const updatedMerchants = merchantsData.filter(m => m.id !== idToDelete);
     saveExcludeMerchants(updatedMerchants);
+
+    if (merchantAddedAt[idToDelete]) {
+        delete merchantAddedAt[idToDelete];
+        GM_setValue('merchantAddedAt', merchantAddedAt);
+    }
 
     // Get search state and counts
     const searchInput = document.getElementById('merchantSearch');
@@ -4284,10 +4525,10 @@ function processArticles() {
         if (blockedUsers.length > 0) {
             // Normalisiere blockierte User zu Kleinbuchstaben für Vergleich
             const normalizedBlockedUsers = blockedUsers.map(u => u.toLowerCase());
-            
+
             // Methode 1: data-md-author Attribut
             let username = deal.getAttribute('data-md-author');
-            
+
             // Methode 2: User-Link
             if (!username) {
                 const userLink = deal.querySelector('a[data-t="userLink"]');
@@ -4295,7 +4536,7 @@ function processArticles() {
                     username = userLink.textContent.trim();
                 }
             }
-            
+
             // Methode 3: Span-Text "Veröffentlicht von"
             if (!username) {
                 const userSpan = deal.querySelector('.overflow--ellipsis.size--all-xs.size--fromW3-s');
@@ -4306,7 +4547,7 @@ function processArticles() {
                     }
                 }
             }
-            
+
             if (username) {
                 const normalizedUsername = username.toLowerCase();
                 if (normalizedBlockedUsers.includes(normalizedUsername)) {
@@ -4706,10 +4947,10 @@ function handleUserBlock(article) {
     if (DEBUG.userBlocking) {
         console.log('[MDM UserBlock] handleUserBlock called', { article: article?.id });
     }
-    
+
     let username = null;
     let foundVia = null;
-    
+
     // Methode 1: data-md-author Attribut (zuverlässigste Methode)
     username = article.getAttribute('data-md-author');
     if (username) {
@@ -4720,7 +4961,7 @@ function handleUserBlock(article) {
     } else if (DEBUG.criticalErrors) {
         console.warn('[MDM Critical] ⚠ data-md-author attribute not found on article');
     }
-    
+
     // Methode 2: Span mit "Veröffentlicht von" Text
     if (!username) {
         const userSpan = article.querySelector('.overflow--ellipsis.size--all-xs.size--fromW3-s');
@@ -4739,7 +4980,7 @@ function handleUserBlock(article) {
             console.warn('[MDM Critical] ⚠ Selector ".overflow--ellipsis.size--all-xs.size--fromW3-s" returned no element');
         }
     }
-    
+
     // Methode 3: User-Link im Header
     if (!username) {
         const userLink = article.querySelector('a[data-t="userLink"]');
@@ -4753,7 +4994,7 @@ function handleUserBlock(article) {
             console.warn('[MDM Critical] ⚠ Selector "a[data-t=\"userLink\"]" returned no element');
         }
     }
-    
+
     if (!username) {
         console.error('[MDM Critical] ❌ ALLE Selektoren fehlgeschlagen! Kann Username nicht finden.');
         console.error('[MDM Critical] Article ID:', article.id);
@@ -4768,7 +5009,7 @@ function handleUserBlock(article) {
         alert('Benutzerinformation konnte nicht gefunden werden.');
         return;
     }
-    
+
     // Username normalisieren (Kleinbuchstaben für Vergleich)
     username = username.toLowerCase();
     if (DEBUG.userBlocking) {
@@ -4788,10 +5029,12 @@ function handleUserBlock(article) {
     if (DEBUG.userBlocking) {
         console.log('[MDM UserBlock] Current blocked users:', blockedUsers);
     }
-    
+
     if (!blockedUsers.includes(username)) {
-        blockedUsers.push(username);
+        blockedUsers.unshift(username);
         GM_setValue('blockedUsers', blockedUsers);
+        userAddedAt[username] = formatTimestamp();
+        GM_setValue('userAddedAt', userAddedAt);
         if (DEBUG.userBlocking) {
             console.log('[MDM UserBlock] User added to blocklist:', username);
             console.log('[MDM UserBlock] Updated blocklist:', blockedUsers);
@@ -4893,7 +5136,7 @@ function backupData() {
         const currentWords = loadExcludeWords();
         const currentMerchants = loadExcludeMerchants();
         const currentBlockedUsers = GM_getValue('blockedUsers', []);
-        
+
         if (DEBUG.backup) {
             console.log('[MDM Backup] Creating backup with data:', {
                 words: currentWords.length,
@@ -4911,7 +5154,7 @@ function backupData() {
             maxPrice: maxPrice,
             hideColdDeals: hideColdDeals
         };
-        
+
         if (DEBUG.backup) {
             console.log('[MDM Backup] Backup object created:', backup);
         }
@@ -4979,7 +5222,7 @@ function restoreData(event) {
         try {
             // 3. Daten-Parsing
             const restoredData = JSON.parse(e.target.result);
-            
+
             if (DEBUG.backup) {
                 console.log('[MDM Restore] Restored data:', restoredData);
                 console.log('[MDM Restore] Blocked users in backup:', restoredData.blockedUsers);
@@ -5034,8 +5277,7 @@ function restoreData(event) {
 
             // 7. Daten speichern
             // --- Wortfilter ---
-            GM_setValue('excludeWords', mergedWords);
-            localStorage.setItem('excludeWords', JSON.stringify(mergedWords));
+            saveExcludeWords(mergedWords);
             excludeWords = mergedWords;
 
             // --- Händlerfilter ---
