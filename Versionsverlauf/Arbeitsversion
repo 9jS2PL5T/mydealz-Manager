@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         mydealz Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.17.2_Arbeitsversion_251205_0935
+// @version      1.17.2_251205_1248
 // @description  Deals gezielt ausblenden mittels X Button, Filtern nach Händlern und Wörtern im Titel. Teure und kalte Deals ausblenden.
 // @author       Flo (https://www.mydealz.de/profile/Basics0119) (https://github.com/9jS2PL5T) & Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister) (https://github.com/grapefruit89)
 // @license      MIT
@@ -608,7 +608,7 @@ function createExcludeWordEntry(word) {
     if (normalized.includes(' ') || normalized.includes('-')) {
         const parts = normalized.split(' ').filter(Boolean);
         const firstWord = parts[0] || normalized;
-        const firstWordRegex = new RegExp(`\b${escapeRegex(firstWord)}\b`, 'i');
+        const firstWordRegex = new RegExp(`\\b${escapeRegex(firstWord)}\\b`, 'i');
         return {
             original: word,
             type: 'phrase',
@@ -623,7 +623,7 @@ function createExcludeWordEntry(word) {
         };
     }
 
-    const regex = new RegExp(`\b${escapeRegex(normalized)}\b`, 'i');
+    const regex = new RegExp(`\\b${escapeRegex(normalized)}\\b`, 'i');
     return {
         original: word,
         type: 'simple',
@@ -2456,11 +2456,65 @@ function makeDraggable(element) {
         }
     }
 
+    // Resize-Handler für Fenstergrößenänderungen
+    const handleResize = () => {
+        if (!element || !element.parentElement) return;
+        
+        const rect = element.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        
+        let newLeft = rect.left;
+        let newTop = rect.top;
+        let needsUpdate = false;
+        
+        // Prüfe rechten Rand
+        if (rect.right > vw) {
+            newLeft = Math.max(0, vw - rect.width);
+            needsUpdate = true;
+        }
+        
+        // Prüfe unteren Rand
+        if (rect.bottom > vh) {
+            newTop = Math.max(0, vh - rect.height);
+            needsUpdate = true;
+        }
+        
+        // Prüfe linken Rand
+        if (rect.left < 0) {
+            newLeft = 0;
+            needsUpdate = true;
+        }
+        
+        // Prüfe oberen Rand
+        if (rect.top < 0) {
+            newTop = 0;
+            needsUpdate = true;
+        }
+        
+        // Position aktualisieren falls nötig
+        if (needsUpdate) {
+            element.style.left = newLeft + 'px';
+            element.style.top = newTop + 'px';
+            element.style.transform = 'none';
+            
+            // Aktualisierte Position speichern
+            GM_setValue('mdmSettingsPos', {
+                left: newLeft,
+                top: newTop
+            });
+        }
+    };
+    
+    // Resize-Event-Listener hinzufügen
+    window.addEventListener('resize', handleResize);
+
     // Cleanup-Funktion zurückgeben
     return () => {
         header.removeEventListener('mousedown', startDrag);
         document.removeEventListener('mousemove', drag);
         document.removeEventListener('mouseup', stopDrag);
+        window.removeEventListener('resize', handleResize);
     };
 }
 
