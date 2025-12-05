@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         mydealz Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.17.2_Arbeitsversion
+// @version      1.17.2_Arbeitsversion_251205_0935
 // @description  Deals gezielt ausblenden mittels X Button, Filtern nach Händlern und Wörtern im Titel. Teure und kalte Deals ausblenden.
 // @author       Flo (https://www.mydealz.de/profile/Basics0119) (https://github.com/9jS2PL5T) & Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister) (https://github.com/grapefruit89)
 // @license      MIT
@@ -19,6 +19,7 @@
 // 2025-12-04 - v1.17.2
 // FIX: Beim Update des Scripts wurden manche gesetzten Einstellungen nicht korrekt übernommen
 // ADD: Wortfilter unterstützt jetzt Wildcards (*) für flexible Teilmatches im Titel
+// ADD: Sortierung der Filterlisten nach "Alphabet" und "Hinzugefügt am"
 
 //#region --- 1. Initialisierung und Grundeinstellungen ---
 
@@ -839,6 +840,13 @@ localStorage.setItem('hideShareButtons', hideShareButtons.toString());
 
 // --- Temporäre Listen ---
 let recentHiddenDeals = [];
+
+// --- Sortier-States für Filterlisten ---
+let listSortStates = {
+    words: { mode: 'added', ascending: false }, // Standard: Neueste zuerst
+    merchants: { mode: 'added', ascending: false },
+    users: { mode: 'added', ascending: false }
+};
 //#endregion
 
 
@@ -872,6 +880,23 @@ function throttle(func, limit) {
             }, limit);
         }
     }
+}
+
+// === Sortierung ===
+// Zentrale Sortierfunktion für Listen
+function sortFilterList(list, mode, ascending = true) {
+    let sorted;
+    if (mode === 'alphabetical') {
+        sorted = [...list].sort((a, b) => {
+            const valA = (a.name || a.word || a.username || a).toString().toLowerCase();
+            const valB = (b.name || b.word || b.username || b).toString().toLowerCase();
+            return valA.localeCompare(valB, 'de', { sensitivity: 'base' });
+        });
+    } else { // 'added' - Original-Reihenfolge (wie gespeichert)
+        sorted = [...list];
+    }
+    if (!ascending) sorted.reverse();
+    return sorted;
 }
 
 // Liefert Theme-spezifische Farben basierend auf aktuellem Theme
@@ -2523,7 +2548,9 @@ function createMerchantListUI() {
         color: ${colors.text};
     `;
 
-    const currentMerchants = loadExcludeMerchants();
+    const loadedMerchants = loadExcludeMerchants();
+    const sortState = listSortStates.merchants;
+    const currentMerchants = sortFilterList(loadedMerchants, sortState.mode, sortState.ascending);
 
     const merchantListHTML = currentMerchants.map(merchant => `
         <div class="merchant-item" style="
@@ -2555,7 +2582,108 @@ function createMerchantListUI() {
     `).join('');
 
     merchantListDiv.innerHTML = `
-        <h4 style="margin-bottom: 10px;">Ausgeblendete Händler (${currentMerchants.length})</h4>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h4 style="margin: 0;">Ausgeblendete Händler (${currentMerchants.length})</h4>
+            <div style="position: relative;">
+                <button id="sortMerchantsDropdown" class="sort-dropdown-btn" style="
+                    background: ${colors.buttonBg};
+                    border: 1px solid ${colors.buttonBorder};
+                    color: ${colors.text};
+                    cursor: pointer;
+                    padding: 6px 10px;
+                    border-radius: 3px;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 14px;
+                " title="Sortierung">
+                    ${sortState.mode === 'alphabetical' ? '<span style="font-weight: bold;">AZ</span>' : '<i class="fas fa-clock"></i>'}
+                    <i class="fas fa-arrow-${sortState.ascending ? 'up' : 'down'}" style="font-size: 12px;"></i>
+                    <i class="fas fa-chevron-down" style="font-size: 10px; margin-left: 2px;"></i>
+                </button>
+                <div id="sortMerchantsMenu" style="
+                    display: none;
+                    position: absolute;
+                    top: 100%;
+                    right: 0;
+                    margin-top: 4px;
+                    background: ${colors.background};
+                    border: 1px solid ${colors.border};
+                    border-radius: 3px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+                    z-index: 1000;
+                    min-width: 140px;
+                ">
+                    <button class="sort-menu-item" data-mode="alphabetical" data-asc="true" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        background: none;
+                        border: none;
+                        color: ${colors.text};
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        font-size: 13px;
+                        border-bottom: 1px solid ${colors.border};
+                    ">
+                        <span style="font-weight: bold; width: 20px;">AZ</span>
+                        <i class="fas fa-arrow-up" style="font-size: 11px;"></i>
+                        <span style="flex: 1;">A → Z</span>
+                    </button>
+                    <button class="sort-menu-item" data-mode="alphabetical" data-asc="false" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        background: none;
+                        border: none;
+                        color: ${colors.text};
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        font-size: 13px;
+                        border-bottom: 1px solid ${colors.border};
+                    ">
+                        <span style="font-weight: bold; width: 20px;">AZ</span>
+                        <i class="fas fa-arrow-down" style="font-size: 11px;"></i>
+                        <span style="flex: 1;">Z → A</span>
+                    </button>
+                    <button class="sort-menu-item" data-mode="added" data-asc="false" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        background: none;
+                        border: none;
+                        color: ${colors.text};
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        font-size: 13px;
+                        border-bottom: 1px solid ${colors.border};
+                    ">
+                        <i class="fas fa-clock" style="width: 20px;"></i>
+                        <i class="fas fa-arrow-down" style="font-size: 11px;"></i>
+                        <span style="flex: 1;">Neu → Alt</span>
+                    </button>
+                    <button class="sort-menu-item" data-mode="added" data-asc="true" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        background: none;
+                        border: none;
+                        color: ${colors.text};
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        font-size: 13px;
+                    ">
+                        <i class="fas fa-clock" style="width: 20px;"></i>
+                        <i class="fas fa-arrow-up" style="font-size: 11px;"></i>
+                        <span style="flex: 1;">Alt → Neu</span>
+                    </button>
+                </div>
+            </div>
+        </div>
         <input type="text" id="merchantSearch" placeholder="Händler suchen..."
             style="
                 width: 100%;
@@ -2616,6 +2744,48 @@ function createMerchantListUI() {
         min-width: 100px;
         text-align: center;
     `;
+
+    // Sortier-Dropdown Event-Listener
+    const merchantsDropdownBtn = document.getElementById('sortMerchantsDropdown');
+    const merchantsDropdownMenu = document.getElementById('sortMerchantsMenu');
+    
+    merchantsDropdownBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        merchantsDropdownMenu.style.display = merchantsDropdownMenu.style.display === 'none' ? 'block' : 'none';
+    });
+
+    // Schließe Dropdown bei Klick außerhalb
+    const closeMerchantsDropdown = (e) => {
+        if (!merchantsDropdownBtn.contains(e.target) && !merchantsDropdownMenu.contains(e.target)) {
+            merchantsDropdownMenu.style.display = 'none';
+        }
+    };
+    document.addEventListener('click', closeMerchantsDropdown);
+
+    // Menü-Items Event-Listener
+    merchantsDropdownMenu.querySelectorAll('.sort-menu-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const mode = item.dataset.mode;
+            const ascending = item.dataset.asc === 'true';
+            listSortStates.merchants.mode = mode;
+            listSortStates.merchants.ascending = ascending;
+            document.removeEventListener('click', closeMerchantsDropdown);
+            // UI neu aufbauen ohne activeSubUI zu ändern
+            const oldDiv = merchantListDiv;
+            if (oldDiv && oldDiv.parentNode) {
+                oldDiv.parentNode.removeChild(oldDiv);
+            }
+            createMerchantListUI();
+        });
+        // Hover-Effekt
+        item.addEventListener('mouseenter', () => {
+            item.style.background = colors.itemBg;
+        });
+        item.addEventListener('mouseleave', () => {
+            item.style.background = 'none';
+        });
+    });
 
     // Add search functionality
     const searchInput = document.getElementById('merchantSearch');
@@ -2685,7 +2855,9 @@ function createExcludeWordsUI() {
         color: ${colors.text};
     `;
 
-    const currentWords = loadExcludeWords();
+    const loadedWords = loadExcludeWords();
+    const sortState = listSortStates.words;
+    const currentWords = sortFilterList(loadedWords, sortState.mode, sortState.ascending);
 
     const wordsListHTML = currentWords.map(word => `
         <div class="word-item" style="
@@ -2717,7 +2889,108 @@ function createExcludeWordsUI() {
     `).join('');
 
     wordsListDiv.innerHTML = `
-        <h4 style="margin-bottom: 10px;">Ausgeblendete Wörter (${currentWords.length})</h4>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h4 style="margin: 0;">Ausgeblendete Wörter (${currentWords.length})</h4>
+            <div style="position: relative;">
+                <button id="sortWordsDropdown" class="sort-dropdown-btn" style="
+                    background: ${colors.buttonBg};
+                    border: 1px solid ${colors.buttonBorder};
+                    color: ${colors.text};
+                    cursor: pointer;
+                    padding: 6px 10px;
+                    border-radius: 3px;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 14px;
+                " title="Sortierung">
+                    ${sortState.mode === 'alphabetical' ? '<span style="font-weight: bold;">AZ</span>' : '<i class="fas fa-clock"></i>'}
+                    <i class="fas fa-arrow-${sortState.ascending ? 'up' : 'down'}" style="font-size: 12px;"></i>
+                    <i class="fas fa-chevron-down" style="font-size: 10px; margin-left: 2px;"></i>
+                </button>
+                <div id="sortWordsMenu" style="
+                    display: none;
+                    position: absolute;
+                    top: 100%;
+                    right: 0;
+                    margin-top: 4px;
+                    background: ${colors.background};
+                    border: 1px solid ${colors.border};
+                    border-radius: 3px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+                    z-index: 1000;
+                    min-width: 140px;
+                ">
+                    <button class="sort-menu-item" data-mode="alphabetical" data-asc="true" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        background: none;
+                        border: none;
+                        color: ${colors.text};
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        font-size: 13px;
+                        border-bottom: 1px solid ${colors.border};
+                    ">
+                        <span style="font-weight: bold; width: 20px;">AZ</span>
+                        <i class="fas fa-arrow-up" style="font-size: 11px;"></i>
+                        <span style="flex: 1;">A → Z</span>
+                    </button>
+                    <button class="sort-menu-item" data-mode="alphabetical" data-asc="false" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        background: none;
+                        border: none;
+                        color: ${colors.text};
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        font-size: 13px;
+                        border-bottom: 1px solid ${colors.border};
+                    ">
+                        <span style="font-weight: bold; width: 20px;">AZ</span>
+                        <i class="fas fa-arrow-down" style="font-size: 11px;"></i>
+                        <span style="flex: 1;">Z → A</span>
+                    </button>
+                    <button class="sort-menu-item" data-mode="added" data-asc="false" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        background: none;
+                        border: none;
+                        color: ${colors.text};
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        font-size: 13px;
+                        border-bottom: 1px solid ${colors.border};
+                    ">
+                        <i class="fas fa-clock" style="width: 20px;"></i>
+                        <i class="fas fa-arrow-down" style="font-size: 11px;"></i>
+                        <span style="flex: 1;">Neu → Alt</span>
+                    </button>
+                    <button class="sort-menu-item" data-mode="added" data-asc="true" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        background: none;
+                        border: none;
+                        color: ${colors.text};
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        font-size: 13px;
+                    ">
+                        <i class="fas fa-clock" style="width: 20px;"></i>
+                        <i class="fas fa-arrow-up" style="font-size: 11px;"></i>
+                        <span style="flex: 1;">Alt → Neu</span>
+                    </button>
+                </div>
+            </div>
+        </div>
         <input type="text" id="wordSearch" placeholder="Wörter suchen..."
             style="
                 width: 100%;
@@ -2778,6 +3051,48 @@ function createExcludeWordsUI() {
         min-width: 100px;
         text-align: center;
     `;
+
+    // Sortier-Dropdown Event-Listener
+    const wordsDropdownBtn = document.getElementById('sortWordsDropdown');
+    const wordsDropdownMenu = document.getElementById('sortWordsMenu');
+    
+    wordsDropdownBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        wordsDropdownMenu.style.display = wordsDropdownMenu.style.display === 'none' ? 'block' : 'none';
+    });
+
+    // Schließe Dropdown bei Klick außerhalb
+    const closeWordsDropdown = (e) => {
+        if (!wordsDropdownBtn.contains(e.target) && !wordsDropdownMenu.contains(e.target)) {
+            wordsDropdownMenu.style.display = 'none';
+        }
+    };
+    document.addEventListener('click', closeWordsDropdown);
+
+    // Menü-Items Event-Listener
+    wordsDropdownMenu.querySelectorAll('.sort-menu-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const mode = item.dataset.mode;
+            const ascending = item.dataset.asc === 'true';
+            listSortStates.words.mode = mode;
+            listSortStates.words.ascending = ascending;
+            document.removeEventListener('click', closeWordsDropdown);
+            // UI neu aufbauen ohne activeSubUI zu ändern
+            const oldDiv = wordsListDiv;
+            if (oldDiv && oldDiv.parentNode) {
+                oldDiv.parentNode.removeChild(oldDiv);
+            }
+            createExcludeWordsUI();
+        });
+        // Hover-Effekt
+        item.addEventListener('mouseenter', () => {
+            item.style.background = colors.itemBg;
+        });
+        item.addEventListener('mouseleave', () => {
+            item.style.background = 'none';
+        });
+    });
 
     // Add search functionality
     const searchInput = document.getElementById('wordSearch');
@@ -2853,7 +3168,9 @@ function createBlockedUsersUI() {
     `;
 
     // Lade blockierte Benutzer
-    const blockedUsers = GM_getValue('blockedUsers', []);
+    const loadedUsers = GM_getValue('blockedUsers', []);
+    const sortState = listSortStates.users;
+    const blockedUsers = sortFilterList(loadedUsers, sortState.mode, sortState.ascending);
     if (DEBUG.userBlocking) {
         console.log('[MDM UserBlock] Loading blocked users UI, count:', blockedUsers.length, 'users:', blockedUsers);
     }
@@ -2888,7 +3205,108 @@ function createBlockedUsersUI() {
     `).join('');
 
     blockedUsersDiv.innerHTML = `
-        <h4 style="margin-bottom: 10px;">Ausgeblendete Benutzer (${blockedUsers.length})</h4>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h4 style="margin: 0;">Ausgeblendete Benutzer (${blockedUsers.length})</h4>
+            <div style="position: relative;">
+                <button id="sortUsersDropdown" class="sort-dropdown-btn" style="
+                    background: ${colors.buttonBg};
+                    border: 1px solid ${colors.buttonBorder};
+                    color: ${colors.text};
+                    cursor: pointer;
+                    padding: 6px 10px;
+                    border-radius: 3px;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 14px;
+                " title="Sortierung">
+                    ${sortState.mode === 'alphabetical' ? '<span style="font-weight: bold;">AZ</span>' : '<i class="fas fa-clock"></i>'}
+                    <i class="fas fa-arrow-${sortState.ascending ? 'up' : 'down'}" style="font-size: 12px;"></i>
+                    <i class="fas fa-chevron-down" style="font-size: 10px; margin-left: 2px;"></i>
+                </button>
+                <div id="sortUsersMenu" style="
+                    display: none;
+                    position: absolute;
+                    top: 100%;
+                    right: 0;
+                    margin-top: 4px;
+                    background: ${colors.background};
+                    border: 1px solid ${colors.border};
+                    border-radius: 3px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+                    z-index: 1000;
+                    min-width: 140px;
+                ">
+                    <button class="sort-menu-item" data-mode="alphabetical" data-asc="true" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        background: none;
+                        border: none;
+                        color: ${colors.text};
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        font-size: 13px;
+                        border-bottom: 1px solid ${colors.border};
+                    ">
+                        <span style="font-weight: bold; width: 20px;">AZ</span>
+                        <i class="fas fa-arrow-up" style="font-size: 11px;"></i>
+                        <span style="flex: 1;">A → Z</span>
+                    </button>
+                    <button class="sort-menu-item" data-mode="alphabetical" data-asc="false" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        background: none;
+                        border: none;
+                        color: ${colors.text};
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        font-size: 13px;
+                        border-bottom: 1px solid ${colors.border};
+                    ">
+                        <span style="font-weight: bold; width: 20px;">AZ</span>
+                        <i class="fas fa-arrow-down" style="font-size: 11px;"></i>
+                        <span style="flex: 1;">Z → A</span>
+                    </button>
+                    <button class="sort-menu-item" data-mode="added" data-asc="false" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        background: none;
+                        border: none;
+                        color: ${colors.text};
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        font-size: 13px;
+                        border-bottom: 1px solid ${colors.border};
+                    ">
+                        <i class="fas fa-clock" style="width: 20px;"></i>
+                        <i class="fas fa-arrow-down" style="font-size: 11px;"></i>
+                        <span style="flex: 1;">Neu → Alt</span>
+                    </button>
+                    <button class="sort-menu-item" data-mode="added" data-asc="true" style="
+                        width: 100%;
+                        padding: 8px 12px;
+                        background: none;
+                        border: none;
+                        color: ${colors.text};
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        font-size: 13px;
+                    ">
+                        <i class="fas fa-clock" style="width: 20px;"></i>
+                        <i class="fas fa-arrow-up" style="font-size: 11px;"></i>
+                        <span style="flex: 1;">Alt → Neu</span>
+                    </button>
+                </div>
+            </div>
+        </div>
         <input type="text" id="userSearch" placeholder="Benutzer suchen..."
             style="
                 width: 100%;
@@ -2948,6 +3366,50 @@ function createBlockedUsersUI() {
         min-width: 100px;
         text-align: center;
     `;
+
+    // Sortier-Dropdown Event-Listener
+    const usersDropdownBtn = document.getElementById('sortUsersDropdown');
+    const usersDropdownMenu = document.getElementById('sortUsersMenu');
+    
+    if (usersDropdownBtn && usersDropdownMenu) {
+        usersDropdownBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            usersDropdownMenu.style.display = usersDropdownMenu.style.display === 'none' ? 'block' : 'none';
+        });
+
+        // Schließe Dropdown bei Klick außerhalb
+        const closeUsersDropdown = (e) => {
+            if (!usersDropdownBtn.contains(e.target) && !usersDropdownMenu.contains(e.target)) {
+                usersDropdownMenu.style.display = 'none';
+            }
+        };
+        document.addEventListener('click', closeUsersDropdown);
+
+        // Menü-Items Event-Listener
+        usersDropdownMenu.querySelectorAll('.sort-menu-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const mode = item.dataset.mode;
+                const ascending = item.dataset.asc === 'true';
+                listSortStates.users.mode = mode;
+                listSortStates.users.ascending = ascending;
+                document.removeEventListener('click', closeUsersDropdown);
+                // UI neu aufbauen ohne activeSubUI zu ändern
+                const oldDiv = blockedUsersDiv;
+                if (oldDiv && oldDiv.parentNode) {
+                    oldDiv.parentNode.removeChild(oldDiv);
+                }
+                createBlockedUsersUI();
+            });
+            // Hover-Effekt
+            item.addEventListener('mouseenter', () => {
+                item.style.background = colors.itemBg;
+            });
+            item.addEventListener('mouseleave', () => {
+                item.style.background = 'none';
+            });
+        });
+    }
 
     // Suchfunktionalität
     const searchInput = document.getElementById('userSearch');
