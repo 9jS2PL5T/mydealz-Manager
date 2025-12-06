@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         mydealz Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.17.2_251205_1332
+// @version      1.17.2_251206_1257
 // @description  Deals gezielt ausblenden mittels X Button, Filtern nach Händlern und Wörtern im Titel. Teure und kalte Deals ausblenden.
 // @author       Flo (https://www.mydealz.de/profile/Basics0119) (https://github.com/9jS2PL5T) & Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister) (https://github.com/grapefruit89)
 // @license      MIT
@@ -2096,7 +2096,7 @@ function createSettingsUI() {
                 excludeWords.unshift(newWord); // Füge neues Wort zur bestehenden Liste hinzu
 
                 const normalizedNew = normalizeForSearch(newWord);
-                wordAddedAt[normalizedNew] = formatTimestamp();
+                wordAddedAt[normalizedNew] = { timestamp: formatTimestamp(), isLegacy: false };
                 GM_setValue('wordAddedAt', wordAddedAt);
 
                 saveExcludeWords(excludeWords);
@@ -2175,7 +2175,7 @@ function createSettingsUI() {
             if (!merchantsData.some(m => m.id === merchantID)) {
                 merchantsData.unshift({ id: merchantID, name: merchantName });
                 const key = String(merchantID);
-                merchantAddedAt[key] = formatTimestamp();
+                merchantAddedAt[key] = { timestamp: formatTimestamp(), isLegacy: false };
                 GM_setValue('merchantAddedAt', merchantAddedAt);
 
                 saveExcludeMerchants(merchantsData);
@@ -2248,7 +2248,7 @@ function createSettingsUI() {
                     if (!excludeWords.includes(word)) {
                         excludeWords.unshift(word);
                         const normalizedNew = normalizeForSearch(word);
-                        wordAddedAt[normalizedNew] = formatTimestamp();
+                        wordAddedAt[normalizedNew] = { timestamp: formatTimestamp(), isLegacy: false };
                         GM_setValue('wordAddedAt', wordAddedAt);
 
                         saveExcludeWords(excludeWords);
@@ -5033,7 +5033,7 @@ function handleUserBlock(article) {
     if (!blockedUsers.includes(username)) {
         blockedUsers.unshift(username);
         GM_setValue('blockedUsers', blockedUsers);
-        userAddedAt[username] = formatTimestamp();
+        userAddedAt[username] = { timestamp: formatTimestamp(), isLegacy: false };
         GM_setValue('userAddedAt', userAddedAt);
         if (DEBUG.userBlocking) {
             console.log('[MDM UserBlock] User added to blocklist:', username);
