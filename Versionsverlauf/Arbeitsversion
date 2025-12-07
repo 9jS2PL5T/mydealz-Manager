@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         mydealz Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.17.2_251207_1523
+// @version      1.17.2_251207_1618
 // @description  Deals gezielt ausblenden mittels X Button, Filtern nach Händlern und Wörtern im Titel. Teure und kalte Deals ausblenden.
 // @author       Flo (https://www.mydealz.de/profile/Basics0119) (https://github.com/9jS2PL5T) & Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister) (https://github.com/grapefruit89)
 // @license      MIT
@@ -1596,7 +1596,7 @@ function createSettingsUI() {
                 line-height: 1;
                 cursor: move;
             " title="Zum Verschieben ziehen">⋮⋮</span>
-            <h3 style="margin: 0; font-size: 16px; font-weight: bold;">Einstellungen</h3>
+            <h3 style="margin: 0; font-size: 16px; font-weight: bold;">mydealz Manager</h3>
         </div>
     `;
 
@@ -2868,7 +2868,7 @@ function createMerchantListUI() {
                         font-size: 13px;
                         border-bottom: 1px solid ${colors.border};
                     ">
-                        <span style="font-weight: bold; width: 20px;">AZ</span>
+                        <span style="font-weight: bold; width: 20px;">ZA</span>
                         <span style="flex: 1;">Absteigend</span>
                     </button>
                     <button class="sort-menu-item" data-mode="added" data-asc="false" style="
@@ -3187,7 +3187,7 @@ function createExcludeWordsUI() {
                         font-size: 13px;
                         border-bottom: 1px solid ${colors.border};
                     ">
-                        <span style="font-weight: bold; width: 20px;">AZ</span>
+                        <span style="font-weight: bold; width: 20px;">ZA</span>
                         <span style="flex: 1;">Absteigend</span>
                     </button>
                     <button class="sort-menu-item" data-mode="added" data-asc="false" style="
@@ -3518,7 +3518,7 @@ function createBlockedUsersUI() {
                         font-size: 13px;
                         border-bottom: 1px solid ${colors.border};
                     ">
-                        <span style="font-weight: bold; width: 20px;">AZ</span>
+                        <span style="font-weight: bold; width: 20px;">ZA</span>
                         <span style="flex: 1;">Absteigend</span>
                     </button>
                     <button class="sort-menu-item" data-mode="added" data-asc="false" style="
