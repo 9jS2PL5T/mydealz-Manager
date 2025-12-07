@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         mydealz Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.17.2_251206_1257
+// @version      1.17.2_251207_1440
 // @description  Deals gezielt ausblenden mittels X Button, Filtern nach Händlern und Wörtern im Titel. Teure und kalte Deals ausblenden.
 // @author       Flo (https://www.mydealz.de/profile/Basics0119) (https://github.com/9jS2PL5T) & Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister) (https://github.com/grapefruit89)
 // @license      MIT
@@ -20,6 +20,8 @@
 // FIX: Beim Update des Scripts wurden manche gesetzten Einstellungen nicht korrekt übernommen
 // ADD: Wortfilter unterstützt jetzt Wildcards (*) für flexible Teilmatches im Titel
 // ADD: Sortierung der Filterlisten nach "Alphabet" und "Hinzugefügt am"
+// CHANGE: bessere sichtbarkeit, dass das settingsui verschoben werden kann
+// CHANGE: besseres verhalten des settingsui mit subui, wenn das browserfenster kleiner ist
 
 //#region --- 1. Initialisierung und Grundeinstellungen ---
 
@@ -1582,6 +1584,20 @@ function createSettingsUI() {
         user-select: none;
         background: ${colors.background};
         border-bottom: 1px solid ${colors.border};
+    `;
+
+    // Header-Inhalt mit Grip-Icon und Titel
+    header.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="
+                color: ${colors.text};
+                opacity: 0.4;
+                font-size: 14px;
+                line-height: 1;
+                cursor: move;
+            " title="Zum Verschieben ziehen">⋮⋮</span>
+            <h3 style="margin: 0; font-size: 16px; font-weight: bold;">Einstellungen</h3>
+        </div>
     `;
 
     // Scrollbarer Content-Container
@@ -4328,10 +4344,34 @@ function getSubUIPosition() {
         `;
     } else {
         const gap = 10;
+        const subUIWidth = 300; // Standard-Breite der Sub-UIs
+        const subUIHeight = 500; // Geschätzte Höhe der Sub-UIs
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        // Prüfe ob rechts genug Platz ist
+        let left = settingsRect.right + gap;
+        if (left + subUIWidth > viewportWidth) {
+            // Nicht genug Platz rechts → öffne links vom Settings-Fenster
+            left = settingsRect.left - subUIWidth - gap;
+
+            // Wenn auch links nicht genug Platz → zentriere horizontal
+            if (left < gap) {
+                left = Math.max(gap, (viewportWidth - subUIWidth) / 2);
+            }
+        }
+
+        // Top-Position mit Viewport-Check
+        let top = settingsRect.top;
+        if (top + subUIHeight > viewportHeight) {
+            // Nicht genug Platz unten → positioniere so dass es in Viewport passt
+            top = Math.max(gap, viewportHeight - subUIHeight - gap);
+        }
+
         return `
             position: fixed;
-            top: ${settingsRect.top}px;
-            left: ${settingsRect.right + gap}px;
+            top: ${top}px;
+            left: ${left}px;
             z-index: 10002;
         `;
     }
