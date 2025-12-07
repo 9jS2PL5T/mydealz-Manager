@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         mydealz Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.17.2_251207_1440
+// @version      1.17.2_251207_1523
 // @description  Deals gezielt ausblenden mittels X Button, Filtern nach Händlern und Wörtern im Titel. Teure und kalte Deals ausblenden.
 // @author       Flo (https://www.mydealz.de/profile/Basics0119) (https://github.com/9jS2PL5T) & Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister) (https://github.com/grapefruit89)
 // @license      MIT
@@ -20,8 +20,8 @@
 // FIX: Beim Update des Scripts wurden manche gesetzten Einstellungen nicht korrekt übernommen
 // ADD: Wortfilter unterstützt jetzt Wildcards (*) für flexible Teilmatches im Titel
 // ADD: Sortierung der Filterlisten nach "Alphabet" und "Hinzugefügt am"
-// CHANGE: bessere sichtbarkeit, dass das settingsui verschoben werden kann
-// CHANGE: besseres verhalten des settingsui mit subui, wenn das browserfenster kleiner ist
+// CHANGE: Settings-Dialog mit Grip-Icon (⋮⋮) verschiebbar - visuell erkennbar durch Move-Cursor
+// CHANGE: Settings-Dialog passt sich dynamisch an Browserfenster-Größenänderungen an (max-width/max-height)
 
 //#region --- 1. Initialisierung und Grundeinstellungen ---
 
@@ -2824,7 +2824,6 @@ function createMerchantListUI() {
                     font-size: 14px;
                 " title="Sortierung">
                     ${sortState.mode === 'alphabetical' ? '<span style="font-weight: bold;">AZ</span>' : '<i class="fas fa-clock"></i>'}
-                    <i class="fas fa-arrow-${sortState.ascending ? 'up' : 'down'}" style="font-size: 12px;"></i>
                     <i class="fas fa-chevron-down" style="font-size: 10px; margin-left: 2px;"></i>
                 </button>
                 <div id="sortMerchantsMenu" style="
@@ -2838,7 +2837,7 @@ function createMerchantListUI() {
                     border-radius: 3px;
                     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
                     z-index: 1000;
-                    min-width: 140px;
+                    min-width: 160px;
                 ">
                     <button class="sort-menu-item" data-mode="alphabetical" data-asc="true" style="
                         width: 100%;
@@ -2854,8 +2853,7 @@ function createMerchantListUI() {
                         border-bottom: 1px solid ${colors.border};
                     ">
                         <span style="font-weight: bold; width: 20px;">AZ</span>
-                        <i class="fas fa-arrow-up" style="font-size: 11px;"></i>
-                        <span style="flex: 1;">A → Z</span>
+                        <span style="flex: 1;">Aufsteigend</span>
                     </button>
                     <button class="sort-menu-item" data-mode="alphabetical" data-asc="false" style="
                         width: 100%;
@@ -2871,8 +2869,7 @@ function createMerchantListUI() {
                         border-bottom: 1px solid ${colors.border};
                     ">
                         <span style="font-weight: bold; width: 20px;">AZ</span>
-                        <i class="fas fa-arrow-down" style="font-size: 11px;"></i>
-                        <span style="flex: 1;">Z → A</span>
+                        <span style="flex: 1;">Absteigend</span>
                     </button>
                     <button class="sort-menu-item" data-mode="added" data-asc="false" style="
                         width: 100%;
@@ -2888,8 +2885,7 @@ function createMerchantListUI() {
                         border-bottom: 1px solid ${colors.border};
                     ">
                         <i class="fas fa-clock" style="width: 20px;"></i>
-                        <i class="fas fa-arrow-down" style="font-size: 11px;"></i>
-                        <span style="flex: 1;">Neu → Alt</span>
+                        <span style="flex: 1;">Neueste zuerst</span>
                     </button>
                     <button class="sort-menu-item" data-mode="added" data-asc="true" style="
                         width: 100%;
@@ -2904,8 +2900,7 @@ function createMerchantListUI() {
                         font-size: 13px;
                     ">
                         <i class="fas fa-clock" style="width: 20px;"></i>
-                        <i class="fas fa-arrow-up" style="font-size: 11px;"></i>
-                        <span style="flex: 1;">Alt → Neu</span>
+                        <span style="flex: 1;">Älteste zuerst</span>
                     </button>
                 </div>
             </div>
@@ -3148,7 +3143,6 @@ function createExcludeWordsUI() {
                     font-size: 14px;
                 " title="Sortierung">
                     ${sortState.mode === 'alphabetical' ? '<span style="font-weight: bold;">AZ</span>' : '<i class="fas fa-clock"></i>'}
-                    <i class="fas fa-arrow-${sortState.ascending ? 'up' : 'down'}" style="font-size: 12px;"></i>
                     <i class="fas fa-chevron-down" style="font-size: 10px; margin-left: 2px;"></i>
                 </button>
                 <div id="sortWordsMenu" style="
@@ -3162,7 +3156,7 @@ function createExcludeWordsUI() {
                     border-radius: 3px;
                     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
                     z-index: 1000;
-                    min-width: 140px;
+                    min-width: 160px;
                 ">
                     <button class="sort-menu-item" data-mode="alphabetical" data-asc="true" style="
                         width: 100%;
@@ -3178,8 +3172,7 @@ function createExcludeWordsUI() {
                         border-bottom: 1px solid ${colors.border};
                     ">
                         <span style="font-weight: bold; width: 20px;">AZ</span>
-                        <i class="fas fa-arrow-up" style="font-size: 11px;"></i>
-                        <span style="flex: 1;">A → Z</span>
+                        <span style="flex: 1;">Aufsteigend</span>
                     </button>
                     <button class="sort-menu-item" data-mode="alphabetical" data-asc="false" style="
                         width: 100%;
@@ -3195,8 +3188,7 @@ function createExcludeWordsUI() {
                         border-bottom: 1px solid ${colors.border};
                     ">
                         <span style="font-weight: bold; width: 20px;">AZ</span>
-                        <i class="fas fa-arrow-down" style="font-size: 11px;"></i>
-                        <span style="flex: 1;">Z → A</span>
+                        <span style="flex: 1;">Absteigend</span>
                     </button>
                     <button class="sort-menu-item" data-mode="added" data-asc="false" style="
                         width: 100%;
@@ -3212,8 +3204,7 @@ function createExcludeWordsUI() {
                         border-bottom: 1px solid ${colors.border};
                     ">
                         <i class="fas fa-clock" style="width: 20px;"></i>
-                        <i class="fas fa-arrow-down" style="font-size: 11px;"></i>
-                        <span style="flex: 1;">Neu → Alt</span>
+                        <span style="flex: 1;">Neueste zuerst</span>
                     </button>
                     <button class="sort-menu-item" data-mode="added" data-asc="true" style="
                         width: 100%;
@@ -3228,8 +3219,7 @@ function createExcludeWordsUI() {
                         font-size: 13px;
                     ">
                         <i class="fas fa-clock" style="width: 20px;"></i>
-                        <i class="fas fa-arrow-up" style="font-size: 11px;"></i>
-                        <span style="flex: 1;">Alt → Neu</span>
+                        <span style="flex: 1;">Älteste zuerst</span>
                     </button>
                 </div>
             </div>
@@ -3484,7 +3474,6 @@ function createBlockedUsersUI() {
                     font-size: 14px;
                 " title="Sortierung">
                     ${sortState.mode === 'alphabetical' ? '<span style="font-weight: bold;">AZ</span>' : '<i class="fas fa-clock"></i>'}
-                    <i class="fas fa-arrow-${sortState.ascending ? 'up' : 'down'}" style="font-size: 12px;"></i>
                     <i class="fas fa-chevron-down" style="font-size: 10px; margin-left: 2px;"></i>
                 </button>
                 <div id="sortUsersMenu" style="
@@ -3498,7 +3487,7 @@ function createBlockedUsersUI() {
                     border-radius: 3px;
                     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
                     z-index: 1000;
-                    min-width: 140px;
+                    min-width: 160px;
                 ">
                     <button class="sort-menu-item" data-mode="alphabetical" data-asc="true" style="
                         width: 100%;
@@ -3514,8 +3503,7 @@ function createBlockedUsersUI() {
                         border-bottom: 1px solid ${colors.border};
                     ">
                         <span style="font-weight: bold; width: 20px;">AZ</span>
-                        <i class="fas fa-arrow-up" style="font-size: 11px;"></i>
-                        <span style="flex: 1;">A → Z</span>
+                        <span style="flex: 1;">Aufsteigend</span>
                     </button>
                     <button class="sort-menu-item" data-mode="alphabetical" data-asc="false" style="
                         width: 100%;
@@ -3531,8 +3519,7 @@ function createBlockedUsersUI() {
                         border-bottom: 1px solid ${colors.border};
                     ">
                         <span style="font-weight: bold; width: 20px;">AZ</span>
-                        <i class="fas fa-arrow-down" style="font-size: 11px;"></i>
-                        <span style="flex: 1;">Z → A</span>
+                        <span style="flex: 1;">Absteigend</span>
                     </button>
                     <button class="sort-menu-item" data-mode="added" data-asc="false" style="
                         width: 100%;
@@ -3548,8 +3535,7 @@ function createBlockedUsersUI() {
                         border-bottom: 1px solid ${colors.border};
                     ">
                         <i class="fas fa-clock" style="width: 20px;"></i>
-                        <i class="fas fa-arrow-down" style="font-size: 11px;"></i>
-                        <span style="flex: 1;">Neu → Alt</span>
+                        <span style="flex: 1;">Neueste zuerst</span>
                     </button>
                     <button class="sort-menu-item" data-mode="added" data-asc="true" style="
                         width: 100%;
@@ -3564,8 +3550,7 @@ function createBlockedUsersUI() {
                         font-size: 13px;
                     ">
                         <i class="fas fa-clock" style="width: 20px;"></i>
-                        <i class="fas fa-arrow-up" style="font-size: 11px;"></i>
-                        <span style="flex: 1;">Alt → Neu</span>
+                        <span style="flex: 1;">Älteste zuerst</span>
                     </button>
                 </div>
             </div>
