@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         mydealz Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.17.2_251207_1618
+// @version      1.17.2_251208_1254
 // @description  Deals gezielt ausblenden mittels X Button, Filtern nach Händlern und Wörtern im Titel. Teure und kalte Deals ausblenden.
 // @author       Flo (https://www.mydealz.de/profile/Basics0119) (https://github.com/9jS2PL5T) & Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister) (https://github.com/grapefruit89)
 // @license      MIT
@@ -20,8 +20,10 @@
 // FIX: Beim Update des Scripts wurden manche gesetzten Einstellungen nicht korrekt übernommen
 // ADD: Wortfilter unterstützt jetzt Wildcards (*) für flexible Teilmatches im Titel
 // ADD: Sortierung der Filterlisten nach "Alphabet" und "Hinzugefügt am"
-// CHANGE: Settings-Dialog zeigt nun Grip-Icon (⋮⋮) zur visuellen Kennzeichnung der Drag-Funktionalität
+// CHANGE: Settings-Dialog zeigt nun Grip-Icon (⋮⋮) zur visuellen Kennzeichnung der Drag-Funktionalität (nur Desktop)
 // CHANGE: Settings-Dialog passt Größe dynamisch an aus-/eingeklappte Accordion-Sektionen an
+// ADD: Timestamp-Anzeige für Filtereinträge - neue Einträge zeigen "am [Datum]", Legacy-Einträge "vor dem [Datum]" hinzugefügt
+// ADD: Whitelist für Wörter im Titel - Deals mit diesen Wörtern werden nicht ausgeblendet
 
 //#region --- 1. Initialisierung und Grundeinstellungen ---
 
@@ -33,6 +35,7 @@ const DEBUG = {
     userBlocking: false,               // Debug-Logs für User-Blocking
     backup: false,                     // Debug-Logs für Backup/Restore
     criticalErrors: false,             // Warnt bei fehlgeschlagenen Selektoren
+    wordFilter: false,                 // Debug-Logs für Wortfilter (zeigt Titel und Match-Versuche)
 
     // Performance Monitoring (granular)
     performance: {
@@ -356,6 +359,7 @@ const PREFERRED_TIMEFRAME_KEY = 'mydealz_preferred_timeframe';
 const LAST_VERSION_KEY = 'mdm_last_version';
 const CHANGELOG_URL = 'https://greasyfork.org/de/scripts/522038-mydealz-manager/versions';
 const UPDATE_NOTICE_SHOWN_KEY = 'mdm_update_notice_shown';
+const WHITELIST_WORDS_KEY = 'whitelistWords';
 
 // --- Selektoren ---
 const ARTICLE_SELECTOR = '.thread--deal, .thread--type--list';
@@ -506,6 +510,37 @@ function ensureUserTimestamps(users, createMissing = false) {
     }
 }
 
+function ensureWhitelistTimestamps(words, createMissing = false) {
+    let changed = false;
+    const now = formatTimestamp();
+    const legacyTimestamp = GM_getValue('mdm_legacy_timestamp');
+    words.forEach(word => {
+        const key = normalizeForSearch(word);
+        if (!whitelistAddedAt[key]) {
+            if (createMissing) {
+                whitelistAddedAt[key] = { timestamp: now, isLegacy: false };
+            } else {
+                whitelistAddedAt[key] = { timestamp: legacyTimestamp, isLegacy: true };
+            }
+            changed = true;
+        } else if (typeof whitelistAddedAt[key] === 'string') {
+            whitelistAddedAt[key] = { timestamp: whitelistAddedAt[key], isLegacy: true };
+            changed = true;
+        }
+    });
+    const removed = pruneTimestampMap(whitelistAddedAt, words.map(normalizeForSearch));
+    if (changed || removed) {
+        GM_setValue('whitelistAddedAt', whitelistAddedAt);
+    }
+}
+
+function rebuildWhitelistCache(words) {
+    const list = Array.isArray(words) ? words : [];
+    whitelistCache = list
+        .map(word => normalizeForSearch(word))
+        .filter(Boolean);
+}
+
 function findDealContainer() {
     for (const selector of FEED_CONTAINER_SELECTORS) {
         const element = document.querySelector(selector);
@@ -590,6 +625,7 @@ const IS_TOUCH_DEVICE = ('ontouchstart' in window) ||
       (navigator.msMaxTouchPoints > 0);
 
 let excludeWordCache = [];
+let whitelistCache = [];
 
 let excludeMerchantsCache = {
     ids: new Set(),
@@ -907,6 +943,7 @@ let uiClickOutsideHandler = null;
 // ===== Filter-Zustand =====
 // --- Ausschlusslisten ---
 let excludeWords = [];
+let whitelistWords = [];
 let excludeMerchantIDs = [];
 let hiddenDeals = [];
 
@@ -953,6 +990,7 @@ let listSortStates = {
 let wordAddedAt = GM_getValue('wordAddedAt', {});       // key: normalized word
 let merchantAddedAt = GM_getValue('merchantAddedAt', {}); // key: merchant id (string)
 let userAddedAt = GM_getValue('userAddedAt', {});         // key: username lowercased
+let whitelistAddedAt = GM_getValue('whitelistAddedAt', {}); // key: normalized word
 
 // --- Legacy Timestamp (für Einträge aus älteren Script-Versionen ohne Timestamp) ---
 // Wird einmalig beim ersten Laden des Scripts in dieser Version gesetzt und bleibt dann dauerhaft
@@ -1189,6 +1227,8 @@ function loadSettings() {
     // Lade Wortfilter und Händlerfilter
     excludeWords = loadExcludeWords();
 	rebuildExcludeWordCache(excludeWords);
+    whitelistWords = loadWhitelistWords();
+    rebuildWhitelistCache(whitelistWords);
     const merchantsData = loadExcludeMerchants();
     excludeMerchantIDs = merchantsData.map(m => m.id);
     rebuildExcludeMerchantCache(merchantsData);
@@ -1381,6 +1421,47 @@ function loadExcludeWords() {
     const result = gmWords.length > 0 ? gmWords : lsWords;
 
     ensureWordTimestamps(result, false);
+
+    return result;
+}
+
+// ===== Whitelist-Verwaltung =====
+// Speichern von Whitelist-Wörtern
+function saveWhitelistWords(words, createMissingTimestamps = false) {
+    const normalizedWords = words.reduce((acc, word) => {
+        const lowerWord = word.toLowerCase();
+        const exists = acc.some(w => w.toLowerCase() === lowerWord);
+        if (!exists) {
+            acc.push(word);
+        }
+        return acc;
+    }, []);
+
+    whitelistWords = normalizedWords;
+    rebuildWhitelistCache(whitelistWords);
+
+    ensureWhitelistTimestamps(whitelistWords, createMissingTimestamps);
+
+    // Cache leeren wenn Filter sich ändern
+    processedDealsCache.clear();
+
+    GM_setValue('whitelistWords', normalizedWords);
+    localStorage.setItem('whitelistWords', JSON.stringify(normalizedWords));
+}
+
+// Laden von Whitelist-Wörtern
+function loadWhitelistWords() {
+    const gmWords = GM_getValue('whitelistWords', []);
+
+    let lsWords = [];
+    try {
+        lsWords = JSON.parse(localStorage.getItem('whitelistWords') || '[]');
+    } catch (e) {
+    }
+
+    const result = gmWords.length > 0 ? gmWords : lsWords;
+
+    ensureWhitelistTimestamps(result, false);
 
     return result;
 }
@@ -1579,23 +1660,23 @@ function createSettingsUI() {
         align-items: center;
         margin-bottom: 8px;
         flex-shrink: 0;
-        cursor: move; // Cursor für Drag-Anzeige
+        cursor: ${IS_TOUCH_DEVICE ? 'default' : 'move'};
         padding: 10px;
         user-select: none;
         background: ${colors.background};
         border-bottom: 1px solid ${colors.border};
     `;
 
-    // Header-Inhalt mit Grip-Icon und Titel
+    // Header-Inhalt mit Grip-Icon und Titel (nur auf Desktop)
     header.innerHTML = `
         <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="
+            ${!IS_TOUCH_DEVICE ? `<span style="
                 color: ${colors.text};
                 opacity: 0.4;
                 font-size: 14px;
                 line-height: 1;
                 cursor: move;
-            " title="Zum Verschieben ziehen">⋮⋮</span>
+            " title="Zum Verschieben ziehen">⋮⋮</span>` : ''}
             <h3 style="margin: 0; font-size: 16px; font-weight: bold;">mydealz Manager</h3>
         </div>
     `;
@@ -1795,6 +1876,13 @@ function createSettingsUI() {
         <div class="section-content" style="display: flex; flex-direction: column; gap: 6px;">
             <button id="showWordsListButton" class="menu-button">
                 <i class="fas fa-list"></i> Wortfilter verwalten
+            </button>
+
+            <!-- Separator -->
+            <div style="height: 1px; background: ${colors.border}; opacity: 0.3; margin: 4px 0;"></div>
+
+            <button id="showWhitelistButton" class="menu-button">
+                <i class="fas fa-shield-alt"></i> Whitelist verwalten
             </button>
 
             <!-- Separator -->
@@ -2227,6 +2315,16 @@ function createSettingsUI() {
         showWordsListButton.addEventListener('click', () => {
             if (switchSubUI('words')) {
                 createExcludeWordsUI();
+            }
+        });
+    }
+
+    // Show Whitelist Button
+    const showWhitelistButton = document.getElementById('showWhitelistButton');
+    if (showWhitelistButton) {
+        showWhitelistButton.addEventListener('click', () => {
+            if (switchSubUI('whitelist')) {
+                createWhitelistUI();
             }
         });
     }
@@ -2763,19 +2861,19 @@ function createMerchantListUI() {
         const key = merchant?.id !== undefined && merchant?.id !== null
             ? String(merchant.id)
             : normalizeForSearch(merchant?.name || '');
-        let title;
+        let timestampText;
         if (key && merchantAddedAt[key]) {
             const data = merchantAddedAt[key];
             if (typeof data === 'object') {
                 // Neues Format mit { timestamp, isLegacy }
                 const prefix = data.isLegacy ? 'Hinzugefügt vor dem' : 'Hinzugefügt am';
-                title = `${prefix} ${data.timestamp}`;
+                timestampText = `${prefix} ${data.timestamp}`;
             } else {
                 // Altes Format (nur Timestamp-String) - behandle als Legacy
-                title = `Hinzugefügt vor dem ${data}`;
+                timestampText = `Hinzugefügt vor dem ${data}`;
             }
         } else {
-            title = 'Hinzugefügt am Unbekannt';
+            timestampText = 'Hinzugefügt am Unbekannt';
         }
         return `
         <div class="merchant-item" style="
@@ -2787,8 +2885,22 @@ function createMerchantListUI() {
             background: ${colors.itemBg};
             color: ${colors.text};
             border: 1px solid ${colors.border};
-            border-radius: 3px;">
-            <span title="${title}">${merchant.name}</span>
+            border-radius: 3px;
+            position: relative;">
+            <span class="merchant-text" style="${IS_TOUCH_DEVICE ? 'cursor: pointer;' : ''}" title="${timestampText}">${merchant.name}</span>
+            ${IS_TOUCH_DEVICE ? `<span class="timestamp-tooltip" style="
+                display: none;
+                position: absolute;
+                left: 0;
+                background: ${colors.background};
+                border: 1px solid ${colors.border};
+                padding: 4px 8px;
+                border-radius: 3px;
+                font-size: 11px;
+                white-space: nowrap;
+                z-index: 1000;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            ">${timestampText}</span>` : ''}
             <button class="delete-merchant" data-id="${merchant.id}" style="
                 background: none;
                 border: none;
@@ -3059,6 +3171,54 @@ function createMerchantListUI() {
         });
     });
 
+    // Touch-Handler für Timestamp-Anzeige auf mobilen Geräten
+    if (IS_TOUCH_DEVICE) {
+        console.log('[MDM Touch] Setting up touch handlers for merchant timestamps');
+        const merchantTexts = document.querySelectorAll('.merchant-text');
+        console.log('[MDM Touch] Found merchant-text elements:', merchantTexts.length);
+
+        merchantTexts.forEach((merchantText, index) => {
+            merchantText.addEventListener('click', function(e) {
+                console.log('[MDM Touch] Merchant text clicked, index:', index);
+                e.stopPropagation();
+                const tooltip = this.nextElementSibling;
+                console.log('[MDM Touch] Tooltip element:', tooltip);
+
+                if (tooltip && tooltip.classList.contains('timestamp-tooltip')) {
+                    const isVisible = tooltip.style.display !== 'none';
+                    console.log('[MDM Touch] Tooltip currently visible:', isVisible);
+                    document.querySelectorAll('.timestamp-tooltip').forEach(t => t.style.display = 'none');
+
+                    if (!isVisible) {
+                        const item = this.closest('.merchant-item');
+                        const itemRect = item.getBoundingClientRect();
+                        const tooltipHeight = 30;
+                        const spaceAbove = itemRect.top;
+                        const spaceBelow = window.innerHeight - itemRect.bottom;
+
+                        console.log('[MDM Touch] Merchant positioning:', { top: itemRect.top, spaceAbove, spaceBelow });
+
+                        if (spaceAbove < tooltipHeight && spaceBelow > tooltipHeight) {
+                            console.log('[MDM Touch] Positioning merchant tooltip BELOW');
+                            tooltip.style.bottom = 'auto';
+                            tooltip.style.top = '100%';
+                            tooltip.style.marginTop = '4px';
+                            tooltip.style.marginBottom = '0';
+                        } else {
+                            console.log('[MDM Touch] Positioning merchant tooltip ABOVE');
+                            tooltip.style.top = 'auto';
+                            tooltip.style.bottom = '100%';
+                            tooltip.style.marginBottom = '4px';
+                            tooltip.style.marginTop = '0';
+                        }
+                        tooltip.style.display = 'block';
+                        console.log('[MDM Touch] Merchant tooltip shown');
+                    }
+                }
+            });
+        });
+    }
+
     // Update close button handlers in createMerchantListUI
     document.getElementById('closeMerchantListButton').addEventListener('click', (e) => {
         e.stopPropagation(); // Prevent event bubbling
@@ -3085,16 +3245,16 @@ function createExcludeWordsUI() {
     const wordsListHTML = currentWords.map(word => {
         const normalized = normalizeForSearch(word);
         const data = wordAddedAt[normalized];
-        let title;
+        let timestampText;
         if (data && typeof data === 'object') {
             // Neues Format mit { timestamp, isLegacy }
             const prefix = data.isLegacy ? 'Hinzugefügt vor dem' : 'Hinzugefügt am';
-            title = `${prefix} ${data.timestamp}`;
+            timestampText = `${prefix} ${data.timestamp}`;
         } else if (data) {
             // Altes Format (nur Timestamp-String) - behandle als Legacy
-            title = `Hinzugefügt vor dem ${data}`;
+            timestampText = `Hinzugefügt vor dem ${data}`;
         } else {
-            title = 'Hinzugefügt am Unbekannt';
+            timestampText = 'Hinzugefügt am Unbekannt';
         }
         return `
         <div class="word-item" style="
@@ -3106,8 +3266,22 @@ function createExcludeWordsUI() {
             background: ${colors.itemBg};
             color: ${colors.text};
             border: 1px solid ${colors.border};
-            border-radius: 3px;">
-            <span style="word-break: break-word;" title="${title}">${word}</span>
+            border-radius: 3px;
+            position: relative;">
+            <span class="word-text" style="word-break: break-word; ${IS_TOUCH_DEVICE ? 'cursor: pointer;' : ''}" title="${timestampText}">${word}</span>
+            ${IS_TOUCH_DEVICE ? `<span class="timestamp-tooltip" style="
+                display: none;
+                position: absolute;
+                left: 0;
+                background: ${colors.background};
+                border: 1px solid ${colors.border};
+                padding: 4px 8px;
+                border-radius: 3px;
+                font-size: 11px;
+                white-space: nowrap;
+                z-index: 1000;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            ">${timestampText}</span>` : ''}
             <button class="delete-word" data-word="${word}" style="
                 background: none;
                 border: none;
@@ -3378,6 +3552,75 @@ function createExcludeWordsUI() {
         });
     });
 
+    // Touch-Handler für Timestamp-Anzeige auf mobilen Geräten
+    if (IS_TOUCH_DEVICE) {
+        console.log('[MDM Touch] Setting up touch handlers for word timestamps, IS_TOUCH_DEVICE:', IS_TOUCH_DEVICE);
+        const wordTexts = document.querySelectorAll('.word-text');
+        console.log('[MDM Touch] Found word-text elements:', wordTexts.length);
+
+        wordTexts.forEach((wordText, index) => {
+            wordText.addEventListener('click', function(e) {
+                console.log('[MDM Touch] Word text clicked, index:', index);
+                e.stopPropagation();
+                const tooltip = this.nextElementSibling;
+                console.log('[MDM Touch] Tooltip element:', tooltip);
+                console.log('[MDM Touch] Has timestamp-tooltip class:', tooltip?.classList.contains('timestamp-tooltip'));
+
+                if (tooltip && tooltip.classList.contains('timestamp-tooltip')) {
+                    // Toggle tooltip visibility
+                    const isVisible = tooltip.style.display !== 'none';
+                    console.log('[MDM Touch] Tooltip currently visible:', isVisible);
+
+                    // Hide all other tooltips first
+                    document.querySelectorAll('.timestamp-tooltip').forEach(t => t.style.display = 'none');
+
+                    if (!isVisible) {
+                        // Positioniere Tooltip dynamisch: oben oder unten
+                        const item = this.closest('.word-item');
+                        const itemRect = item.getBoundingClientRect();
+                        const tooltipHeight = 30; // Geschätzte Höhe
+                        const spaceAbove = itemRect.top;
+                        const spaceBelow = window.innerHeight - itemRect.bottom;
+
+                        console.log('[MDM Touch] Item rect:', {
+                            top: itemRect.top,
+                            bottom: itemRect.bottom,
+                            spaceAbove,
+                            spaceBelow,
+                            windowHeight: window.innerHeight
+                        });
+
+                        if (spaceAbove < tooltipHeight && spaceBelow > tooltipHeight) {
+                            // Nicht genug Platz oben → zeige unten
+                            console.log('[MDM Touch] Positioning tooltip BELOW');
+                            tooltip.style.bottom = 'auto';
+                            tooltip.style.top = '100%';
+                            tooltip.style.marginTop = '4px';
+                            tooltip.style.marginBottom = '0';
+                        } else {
+                            // Zeige oben (Standard)
+                            console.log('[MDM Touch] Positioning tooltip ABOVE');
+                            tooltip.style.top = 'auto';
+                            tooltip.style.bottom = '100%';
+                            tooltip.style.marginBottom = '4px';
+                            tooltip.style.marginTop = '0';
+                        }
+                        tooltip.style.display = 'block';
+                        console.log('[MDM Touch] Tooltip shown with styles:', {
+                            display: tooltip.style.display,
+                            top: tooltip.style.top,
+                            bottom: tooltip.style.bottom,
+                            marginTop: tooltip.style.marginTop,
+                            marginBottom: tooltip.style.marginBottom
+                        });
+                    } else {
+                        console.log('[MDM Touch] Hiding tooltip');
+                    }
+                }
+            });
+        });
+    }
+
     // Update close button handlers in createExcludeWordsUI
     document.getElementById('closeWordsListButton').addEventListener('click', (e) => {
         e.stopPropagation(); // Prevent event bubbling
@@ -3388,6 +3631,285 @@ function createExcludeWordsUI() {
 
     setupClickOutsideHandler();
 }
+
+// Whitelist UI erstellen
+function createWhitelistUI() {
+    const colors = getThemeColors();
+
+    // Erstelle Container wenn nicht vorhanden
+    if (!window.whitelistDiv) {
+        window.whitelistDiv = document.createElement('div');
+    }
+
+    window.whitelistDiv.style.cssText = `
+        ${getSubUIPosition()}
+        padding: 15px;
+        background: ${colors.background};
+        border: 1px solid ${colors.border};
+        border-radius: 5px;
+        width: 300px;
+        color: ${colors.text};
+    `;
+
+    const loadedWords = loadWhitelistWords();
+    const sortState = listSortStates.whitelist || { mode: 'added', ascending: false };
+    listSortStates.whitelist = sortState;
+    const currentWords = sortFilterList(loadedWords, sortState.mode, sortState.ascending);
+
+    const wordsListHTML = currentWords.map(word => {
+        const normalized = normalizeForSearch(word);
+        const data = whitelistAddedAt[normalized];
+        let timestampText;
+        if (data && typeof data === 'object') {
+            const prefix = data.isLegacy ? 'Hinzugefügt vor dem' : 'Hinzugefügt am';
+            timestampText = `${prefix} ${data.timestamp}`;
+        } else if (data) {
+            timestampText = `Hinzugefügt vor dem ${data}`;
+        } else {
+            timestampText = 'Hinzugefügt am Unbekannt';
+        }
+        return `
+        <div class="whitelist-item" style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+            padding: 5px;
+            background: ${colors.itemBg};
+            border-radius: 3px;
+            position: relative;
+        ">
+            <span class="whitelist-text" style="
+                flex-grow: 1;
+                cursor: ${IS_TOUCH_DEVICE ? 'pointer' : 'default'};
+                user-select: none;
+            " ${!IS_TOUCH_DEVICE ? `title="${timestampText}"` : ''}>${word}</span>
+            ${IS_TOUCH_DEVICE ? `
+                <span class="timestamp-tooltip" style="
+                    display: none;
+                    position: absolute;
+                    bottom: 100%;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: ${colors.background};
+                    border: 1px solid ${colors.border};
+                    padding: 4px 8px;
+                    border-radius: 3px;
+                    font-size: 11px;
+                    white-space: nowrap;
+                    z-index: 1000;
+                    pointer-events: none;
+                    margin-bottom: 4px;
+                ">${timestampText}</span>
+            ` : ''}
+            <button class="delete-whitelist-word" data-word="${word}" style="
+                background: none;
+                border: none;
+                cursor: pointer;
+                color: #e74c3c;
+                font-size: 16px;
+                padding: 2px 5px;
+            ">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    `;
+    }).join('');
+
+    window.whitelistDiv.innerHTML = `
+        <div style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        ">
+            <h3 style="margin: 0; font-size: 16px;">
+                <i class="fas fa-shield-alt"></i> Whitelist
+            </h3>
+            <button id="closeWhitelistButton" style="
+                background: none;
+                border: none;
+                cursor: pointer;
+                color: ${colors.text};
+                font-size: 20px;
+                padding: 0;
+                width: 24px;
+                height: 24px;
+            ">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <div style="margin-bottom: 10px;">
+            <p style="
+                margin: 0 0 10px 0;
+                font-size: 12px;
+                color: ${colors.text};
+                opacity: 0.7;
+                line-height: 1.4;
+            ">
+                Wörter in der Whitelist schützen Deals vor dem Wortfilter.
+                <br>Beispiel: "Gewinnspiel" verhindert, dass Gewinnspiel-Deals gefiltert werden.
+            </p>
+            <div style="display: flex; gap: 5px;">
+                <input
+                    type="text"
+                    id="newWhitelistWord"
+                    placeholder="Neues Whitelist-Wort..."
+                    style="
+                        flex-grow: 1;
+                        padding: 8px;
+                        background: ${colors.inputBg};
+                        border: 1px solid ${colors.border};
+                        border-radius: 3px;
+                        color: ${colors.text};
+                    "
+                >
+                <button id="addWhitelistWord" style="
+                    padding: 8px 12px;
+                    background: ${colors.buttonBg};
+                    border: 1px solid ${colors.buttonBorder};
+                    border-radius: 3px;
+                    color: ${colors.text};
+                    cursor: pointer;
+                ">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
+        </div>
+
+        <div style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            padding: 4px 0;
+        ">
+            <span style="font-size: 13px; opacity: 0.8;">
+                ${currentWords.length} ${currentWords.length === 1 ? 'Wort' : 'Wörter'}
+            </span>
+            <div style="display: flex; gap: 4px; align-items: center;">
+                <button id="toggleWhitelistSortMode" style="
+                    background: none;
+                    border: 1px solid ${colors.border};
+                    border-radius: 3px;
+                    padding: 4px 8px;
+                    cursor: pointer;
+                    color: ${colors.text};
+                    font-size: 11px;
+                " title="Sortierung umschalten">
+                    <i class="fas fa-${sortState.mode === 'alphabetical' ? 'sort-alpha-down' : 'clock'}"></i>
+                    ${sortState.mode === 'alphabetical' ? 'A-Z' : 'Datum'}
+                </button>
+                <button id="toggleWhitelistSortDirection" style="
+                    background: none;
+                    border: 1px solid ${colors.border};
+                    border-radius: 3px;
+                    padding: 4px 8px;
+                    cursor: pointer;
+                    color: ${colors.text};
+                    font-size: 11px;
+                " title="Reihenfolge umkehren">
+                    <i class="fas fa-arrow-${sortState.ascending ? 'up' : 'down'}"></i>
+                </button>
+            </div>
+        </div>
+
+        <div style="max-height: 300px; overflow-y: auto;">
+            ${wordsListHTML || '<p style="text-align: center; opacity: 0.5;">Keine Einträge</p>'}
+        </div>
+    `;
+
+    document.body.appendChild(window.whitelistDiv);
+    activeSubUI = 'whitelist';
+
+    // Touch-Handler für Timestamps
+    if (IS_TOUCH_DEVICE) {
+        const whitelistTexts = window.whitelistDiv.querySelectorAll('.whitelist-text');
+        whitelistTexts.forEach((whitelistText) => {
+            whitelistText.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const tooltip = this.nextElementSibling;
+                if (tooltip && tooltip.classList.contains('timestamp-tooltip')) {
+                    const isVisible = tooltip.style.display !== 'none';
+                    document.querySelectorAll('.timestamp-tooltip').forEach(t => t.style.display = 'none');
+
+                    if (!isVisible) {
+                        const item = this.closest('.whitelist-item');
+                        const itemRect = item.getBoundingClientRect();
+                        const tooltipHeight = 30;
+                        const spaceAbove = itemRect.top;
+                        const spaceBelow = window.innerHeight - itemRect.bottom;
+
+                        if (spaceAbove < tooltipHeight && spaceBelow > tooltipHeight) {
+                            tooltip.style.bottom = 'auto';
+                            tooltip.style.top = '100%';
+                            tooltip.style.marginTop = '4px';
+                            tooltip.style.marginBottom = '0';
+                        } else {
+                            tooltip.style.top = 'auto';
+                            tooltip.style.bottom = '100%';
+                            tooltip.style.marginBottom = '4px';
+                            tooltip.style.marginTop = '0';
+                        }
+                        tooltip.style.display = 'block';
+                    }
+                }
+            });
+        });
+    }
+
+    // Event Listeners
+    document.getElementById('closeWhitelistButton').addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeActiveSubUI();
+    });
+
+    document.getElementById('addWhitelistWord').addEventListener('click', () => {
+        const input = document.getElementById('newWhitelistWord');
+        const word = input.value.trim();
+        if (word) {
+            const currentList = loadWhitelistWords();
+            if (!currentList.some(w => w.toLowerCase() === word.toLowerCase())) {
+                currentList.push(word);
+                saveWhitelistWords(currentList, true);
+                createWhitelistUI();
+            }
+            input.value = '';
+        }
+    });
+
+    document.getElementById('newWhitelistWord').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            document.getElementById('addWhitelistWord').click();
+        }
+    });
+
+    document.getElementById('toggleWhitelistSortMode').addEventListener('click', () => {
+        sortState.mode = sortState.mode === 'alphabetical' ? 'added' : 'alphabetical';
+        createWhitelistUI();
+    });
+
+    document.getElementById('toggleWhitelistSortDirection').addEventListener('click', () => {
+        sortState.ascending = !sortState.ascending;
+        createWhitelistUI();
+    });
+
+    window.whitelistDiv.querySelectorAll('.delete-whitelist-word').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const word = btn.dataset.word;
+            const currentList = loadWhitelistWords();
+            const filtered = currentList.filter(w => w !== word);
+            saveWhitelistWords(filtered);
+            createWhitelistUI();
+        });
+    });
+
+    setupClickOutsideHandler();
+}
+
 // Blockierte Benutzer UI erstellen
 function createBlockedUsersUI() {
     const colors = getThemeColors();
@@ -3413,19 +3935,19 @@ function createBlockedUsersUI() {
 
     const blockedUsersHTML = blockedUsers.map(user => {
         const key = (user || '').toLowerCase();
-        let title;
+        let timestampText;
         if (key && userAddedAt[key]) {
             const data = userAddedAt[key];
             if (typeof data === 'object') {
                 // Neues Format mit { timestamp, isLegacy }
                 const prefix = data.isLegacy ? 'Hinzugefügt vor dem' : 'Hinzugefügt am';
-                title = `${prefix} ${data.timestamp}`;
+                timestampText = `${prefix} ${data.timestamp}`;
             } else {
                 // Altes Format (nur Timestamp-String) - behandle als Legacy
-                title = `Hinzugefügt vor dem ${data}`;
+                timestampText = `Hinzugefügt vor dem ${data}`;
             }
         } else {
-            title = 'Hinzugefügt am Unbekannt';
+            timestampText = 'Hinzugefügt am Unbekannt';
         }
         return `
         <div class="user-item" style="
@@ -3437,8 +3959,22 @@ function createBlockedUsersUI() {
             background: ${colors.itemBg};
             color: ${colors.text};
             border: 1px solid ${colors.border};
-            border-radius: 3px;">
-            <span title="${title}">${user}</span>
+            border-radius: 3px;
+            position: relative;">
+            <span class="user-text" style="${IS_TOUCH_DEVICE ? 'cursor: pointer;' : ''}" title="${timestampText}">${user}</span>
+            ${IS_TOUCH_DEVICE ? `<span class="timestamp-tooltip" style="
+                display: none;
+                position: absolute;
+                left: 0;
+                background: ${colors.background};
+                border: 1px solid ${colors.border};
+                padding: 4px 8px;
+                border-radius: 3px;
+                font-size: 11px;
+                white-space: nowrap;
+                z-index: 1000;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            ">${timestampText}</span>` : ''}
             <button class="delete-user" data-user="${user}" style="
                 background: none;
                 border: none;
@@ -3730,6 +4266,54 @@ function createBlockedUsersUI() {
             }
         });
     });
+
+    // Touch-Handler für Timestamp-Anzeige auf mobilen Geräten
+    if (IS_TOUCH_DEVICE) {
+        console.log('[MDM Touch] Setting up touch handlers for user timestamps');
+        const userTexts = document.querySelectorAll('.user-text');
+        console.log('[MDM Touch] Found user-text elements:', userTexts.length);
+
+        userTexts.forEach((userText, index) => {
+            userText.addEventListener('click', function(e) {
+                console.log('[MDM Touch] User text clicked, index:', index);
+                e.stopPropagation();
+                const tooltip = this.nextElementSibling;
+                console.log('[MDM Touch] Tooltip element:', tooltip);
+
+                if (tooltip && tooltip.classList.contains('timestamp-tooltip')) {
+                    const isVisible = tooltip.style.display !== 'none';
+                    console.log('[MDM Touch] Tooltip currently visible:', isVisible);
+                    document.querySelectorAll('.timestamp-tooltip').forEach(t => t.style.display = 'none');
+
+                    if (!isVisible) {
+                        const item = this.closest('.user-item');
+                        const itemRect = item.getBoundingClientRect();
+                        const tooltipHeight = 30;
+                        const spaceAbove = itemRect.top;
+                        const spaceBelow = window.innerHeight - itemRect.bottom;
+
+                        console.log('[MDM Touch] User positioning:', { top: itemRect.top, spaceAbove, spaceBelow });
+
+                        if (spaceAbove < tooltipHeight && spaceBelow > tooltipHeight) {
+                            console.log('[MDM Touch] Positioning user tooltip BELOW');
+                            tooltip.style.bottom = 'auto';
+                            tooltip.style.top = '100%';
+                            tooltip.style.marginTop = '4px';
+                            tooltip.style.marginBottom = '0';
+                        } else {
+                            console.log('[MDM Touch] Positioning user tooltip ABOVE');
+                            tooltip.style.top = 'auto';
+                            tooltip.style.bottom = '100%';
+                            tooltip.style.marginBottom = '4px';
+                            tooltip.style.marginTop = '0';
+                        }
+                        tooltip.style.display = 'block';
+                        console.log('[MDM Touch] User tooltip shown');
+                    }
+                }
+            });
+        });
+    }
 
     // Schließen Button
     document.getElementById('closeBlockedUsersButton').addEventListener('click', (e) => {
@@ -4423,6 +5007,7 @@ function switchSubUI(newUI) {
     // Update button texts
     const merchantButton = document.getElementById('showMerchantListButton');
     const wordsButton = document.getElementById('showWordsListButton');
+    const whitelistButton = document.getElementById('showWhitelistButton');
     const usersButton = document.getElementById('showBlockedUsersButton');
 
     if (merchantButton) {
@@ -4435,6 +5020,12 @@ function switchSubUI(newUI) {
         wordsButton.innerHTML = activeSubUI === 'words'
             ? '<i class="fas fa-times"></i> Wortfilter schließen'
             : '<i class="fas fa-list"></i> Wortfilter verwalten';
+    }
+
+    if (whitelistButton) {
+        whitelistButton.innerHTML = activeSubUI === 'whitelist'
+            ? '<i class="fas fa-times"></i> Whitelist schließen'
+            : '<i class="fas fa-shield-alt"></i> Whitelist verwalten';
     }
 
     if (usersButton) {
@@ -4451,6 +5042,8 @@ function closeActiveSubUI() {
         merchantListDiv?.remove();
     } else if (activeSubUI === 'words') {
         wordsListDiv?.remove();
+    } else if (activeSubUI === 'whitelist') {
+        window.whitelistDiv?.remove();
     } else if (activeSubUI === 'users') {
         blockedUsersDiv?.remove();
     }
@@ -4458,6 +5051,7 @@ function closeActiveSubUI() {
     // Reset button texts
     const merchantButton = document.getElementById('showMerchantListButton');
     const wordsButton = document.getElementById('showWordsListButton');
+    const whitelistButton = document.getElementById('showWhitelistButton');
     const usersButton = document.getElementById('showBlockedUsersButton');
 
     if (merchantButton) {
@@ -4467,6 +5061,10 @@ function closeActiveSubUI() {
 
     if (wordsButton) {
         wordsButton.innerHTML = '<i class="fas fa-list"></i> Wortfilter verwalten';
+    }
+
+    if (whitelistButton) {
+        whitelistButton.innerHTML = '<i class="fas fa-shield-alt"></i> Whitelist verwalten';
     }
 
     if (usersButton) {
@@ -4813,6 +5411,21 @@ function shouldExcludeArticle(article) {
         return false;
     }
 
+    // WHITELIST-PRÜFUNG: Wenn Titel Whitelist-Wort enthält, NICHT ausblenden
+    if (whitelistCache.length > 0) {
+        for (const whitelistWord of whitelistCache) {
+            if (normalizedTitle.includes(whitelistWord)) {
+                if (DEBUG.wordFilter) {
+                    console.log('[MDM Whitelist] Deal protected by whitelist:', {
+                        title: normalizedTitle,
+                        whitelistWord
+                    });
+                }
+                return false; // Deal NICHT ausblenden
+            }
+        }
+    }
+
     if (excludeWordCache.length > 0) {
         perfTracker.start('wordFilter');
         perfTracker.update('filtering.wordFilter.calls', 1);
@@ -4823,6 +5436,14 @@ function shouldExcludeArticle(article) {
                 matched = true;
                 perfTracker.update('filtering.wordFilter.hits', 1);
                 perfTracker.currentBatch.filtering.wordMatches++;
+
+                if (DEBUG.wordFilter) {
+                    console.log('[MDM WordFilter] Match:', {
+                        title: normalizedTitle,
+                        filter: entry.original,
+                        type: entry.type
+                    });
+                }
                 break;
             }
         }
@@ -5159,12 +5780,14 @@ function backupData() {
     try {
         // 1. Daten laden
         const currentWords = loadExcludeWords();
+        const currentWhitelist = loadWhitelistWords();
         const currentMerchants = loadExcludeMerchants();
         const currentBlockedUsers = GM_getValue('blockedUsers', []);
 
         if (DEBUG.backup) {
             console.log('[MDM Backup] Creating backup with data:', {
                 words: currentWords.length,
+                whitelist: currentWhitelist.length,
                 merchants: currentMerchants.length,
                 blockedUsers: currentBlockedUsers.length,
                 blockedUsersList: currentBlockedUsers
@@ -5174,6 +5797,7 @@ function backupData() {
         // 2. Backup-Objekt erstellen
         const backup = {
             excludeWords: currentWords,
+            whitelistWords: currentWhitelist,
             merchantsData: currentMerchants,
             blockedUsers: currentBlockedUsers,
             maxPrice: maxPrice,
@@ -5267,11 +5891,14 @@ function restoreData(event) {
             // 5. Zähler für neue Einträge initialisieren
             const changes = {
                 words: 0,
+                whitelist: 0,
                 merchants: 0,
                 users: 0
             };
 
             // 6. Daten zusammenführen
+            const currentWhitelist = new Set(loadWhitelistWords());
+
             // --- Wörter ---
             restoredData.excludeWords.forEach(word => {
                 if (!currentWords.has(word)) {
@@ -5280,6 +5907,17 @@ function restoreData(event) {
                 }
             });
             const mergedWords = Array.from(currentWords);
+
+            // --- Whitelist ---
+            if (restoredData.whitelistWords) {
+                restoredData.whitelistWords.forEach(word => {
+                    if (!currentWhitelist.has(word)) {
+                        currentWhitelist.add(word);
+                        changes.whitelist++;
+                    }
+                });
+            }
+            const mergedWhitelist = Array.from(currentWhitelist);
 
             // --- Händler ---
             restoredData.merchantsData.forEach(merchant => {
@@ -5304,6 +5942,10 @@ function restoreData(event) {
             // --- Wortfilter ---
             saveExcludeWords(mergedWords);
             excludeWords = mergedWords;
+
+            // --- Whitelist ---
+            saveWhitelistWords(mergedWhitelist);
+            whitelistWords = mergedWhitelist;
 
             // --- Händlerfilter ---
             saveExcludeMerchants(mergedMerchants);
@@ -5334,6 +5976,9 @@ function restoreData(event) {
 
             if (changes.words > 0) {
                 message += `\n• ${changes.words} neue Wörter`;
+            }
+            if (changes.whitelist > 0) {
+                message += `\n• ${changes.whitelist} neue Whitelist-Wörter`;
             }
             if (changes.merchants > 0) {
                 message += `\n• ${changes.merchants} neue Händler`;
