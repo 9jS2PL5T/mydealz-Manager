@@ -46,4 +46,4 @@ MIT
 
 ## Diskussion
 
-[Diskussionsthread auf MyDealz](https://www.mydealz.de/diskussion/tampermonkey-script-fur-mydealz-2299700)
+[Diskussionsthread auf mydealz](https://www.mydealz.de/diskussion/tampermonkey-script-fur-mydealz-2299700)
