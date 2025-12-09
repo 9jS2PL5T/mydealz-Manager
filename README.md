@@ -1,6 +1,6 @@
 # mydealz Manager
 
-Ein Tampermonkey-Userscript zur Verwaltung und Filterung von Deals auf mydealz.de und preisjaeger.at.
+Ein Userscript zur Verwaltung und Filterung von Deals auf mydealz.de und preisjaeger.at.
 
 ## Installation
 
