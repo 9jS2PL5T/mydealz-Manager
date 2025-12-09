@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         mydealz Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.17.2_251208_1254
+// @version      1.17.2_251209_0742
 // @description  Deals gezielt ausblenden mittels X Button, Filtern nach Händlern und Wörtern im Titel. Teure und kalte Deals ausblenden.
 // @author       Flo (https://www.mydealz.de/profile/Basics0119) (https://github.com/9jS2PL5T) & Moritz Baumeister (https://www.mydealz.de/profile/BobBaumeister) (https://github.com/grapefruit89)
 // @license      MIT
@@ -19,6 +19,7 @@
 // 2025-12-04 - v1.17.2
 // FIX: Beim Update des Scripts wurden manche gesetzten Einstellungen nicht korrekt übernommen
 // ADD: Wortfilter unterstützt jetzt Wildcards (*) für flexible Teilmatches im Titel
+// ADD: UND-Filter (+) - Mehrere Wörter müssen im Titel vorkommen (z.B. "discord+nitro")
 // ADD: Sortierung der Filterlisten nach "Alphabet" und "Hinzugefügt am"
 // CHANGE: Settings-Dialog zeigt nun Grip-Icon (⋮⋮) zur visuellen Kennzeichnung der Drag-Funktionalität (nur Desktop)
 // CHANGE: Settings-Dialog passt Größe dynamisch an aus-/eingeklappte Accordion-Sektionen an
@@ -734,9 +735,22 @@ function createExcludeWordEntry(word) {
     }
 
     if (normalized.includes('+')) {
+        // UND-Filter: Alle Wörter müssen vorkommen (egal in welcher Reihenfolge)
+        const parts = normalized.split('+').map(p => p.trim()).filter(Boolean);
+        if (parts.length > 1) {
+            const regexes = parts.map(part => new RegExp(escapeRegex(part), 'i'));
+            return {
+                original: word,
+                type: 'and',
+                normalized,
+                parts,
+                matcher: title => regexes.every(regex => regex.test(title))
+            };
+        }
+        // Fallback wenn kein + gefunden
         return {
             original: word,
-            type: 'plus',
+            type: 'simple',
             normalized,
             matcher: title => title.includes(normalized)
         };
@@ -1800,7 +1814,7 @@ function createSettingsUI() {
                         autocomplete="off"
                         ${IS_TOUCH_DEVICE ? 'readonly' : ''}
                         placeholder="Neues Wort..."
-                        title="Deals mit bestimmten Wörtern ausblenden.\nVerwende * für Teilmatch:\n• Kaffee* → findet Kaffeemaschine, Kaffeetasse, ...\n• *maschine → findet Kaffeemaschine, Waschmaschine, ...\n• *kaffee* → findet alles mit kaffee irgendwo im Wort\n\nSyntax:\n• * als Platzhalter für beliebige Zeichen\n• Ohne * wird das Wort exakt gesucht\n• Mehrere Filter können kombiniert werden"
+                        title="Deals mit bestimmten Wörtern ausblenden.\n\nWildcard-Syntax:\n• Kaffee* → findet Kaffeemaschine, Kaffeetasse\n• *maschine → findet Kaffeemaschine, Waschmaschine\n• *kaffee* → findet alles mit kaffee im Wort\n\nUND-Filter (alle Wörter müssen vorkommen):\n• discord+nitro → findet 'Discord Nitro', 'Nitro (Discord)'\n• apple+watch → findet 'Apple Watch', 'Watch von Apple'\n• iphone+15+pro → alle 3 Wörter müssen im Titel sein\n\nSyntax:\n• * = Platzhalter für beliebige Zeichen\n• + = UND-Verknüpfung (alle Teile müssen vorkommen)\n• Ohne Sonderzeichen = exakte Wortsuche"
                         style="...">
                 </div>
                 ${IS_TOUCH_DEVICE ? `
@@ -3176,28 +3190,28 @@ function createMerchantListUI() {
         console.log('[MDM Touch] Setting up touch handlers for merchant timestamps');
         const merchantTexts = document.querySelectorAll('.merchant-text');
         console.log('[MDM Touch] Found merchant-text elements:', merchantTexts.length);
-
+        
         merchantTexts.forEach((merchantText, index) => {
             merchantText.addEventListener('click', function(e) {
                 console.log('[MDM Touch] Merchant text clicked, index:', index);
                 e.stopPropagation();
                 const tooltip = this.nextElementSibling;
                 console.log('[MDM Touch] Tooltip element:', tooltip);
-
+                
                 if (tooltip && tooltip.classList.contains('timestamp-tooltip')) {
                     const isVisible = tooltip.style.display !== 'none';
                     console.log('[MDM Touch] Tooltip currently visible:', isVisible);
                     document.querySelectorAll('.timestamp-tooltip').forEach(t => t.style.display = 'none');
-
+                    
                     if (!isVisible) {
                         const item = this.closest('.merchant-item');
                         const itemRect = item.getBoundingClientRect();
                         const tooltipHeight = 30;
                         const spaceAbove = itemRect.top;
                         const spaceBelow = window.innerHeight - itemRect.bottom;
-
+                        
                         console.log('[MDM Touch] Merchant positioning:', { top: itemRect.top, spaceAbove, spaceBelow });
-
+                        
                         if (spaceAbove < tooltipHeight && spaceBelow > tooltipHeight) {
                             console.log('[MDM Touch] Positioning merchant tooltip BELOW');
                             tooltip.style.bottom = 'auto';
@@ -3557,7 +3571,7 @@ function createExcludeWordsUI() {
         console.log('[MDM Touch] Setting up touch handlers for word timestamps, IS_TOUCH_DEVICE:', IS_TOUCH_DEVICE);
         const wordTexts = document.querySelectorAll('.word-text');
         console.log('[MDM Touch] Found word-text elements:', wordTexts.length);
-
+        
         wordTexts.forEach((wordText, index) => {
             wordText.addEventListener('click', function(e) {
                 console.log('[MDM Touch] Word text clicked, index:', index);
@@ -3565,15 +3579,15 @@ function createExcludeWordsUI() {
                 const tooltip = this.nextElementSibling;
                 console.log('[MDM Touch] Tooltip element:', tooltip);
                 console.log('[MDM Touch] Has timestamp-tooltip class:', tooltip?.classList.contains('timestamp-tooltip'));
-
+                
                 if (tooltip && tooltip.classList.contains('timestamp-tooltip')) {
                     // Toggle tooltip visibility
                     const isVisible = tooltip.style.display !== 'none';
                     console.log('[MDM Touch] Tooltip currently visible:', isVisible);
-
+                    
                     // Hide all other tooltips first
                     document.querySelectorAll('.timestamp-tooltip').forEach(t => t.style.display = 'none');
-
+                    
                     if (!isVisible) {
                         // Positioniere Tooltip dynamisch: oben oder unten
                         const item = this.closest('.word-item');
@@ -3581,7 +3595,7 @@ function createExcludeWordsUI() {
                         const tooltipHeight = 30; // Geschätzte Höhe
                         const spaceAbove = itemRect.top;
                         const spaceBelow = window.innerHeight - itemRect.bottom;
-
+                        
                         console.log('[MDM Touch] Item rect:', {
                             top: itemRect.top,
                             bottom: itemRect.bottom,
@@ -3589,7 +3603,7 @@ function createExcludeWordsUI() {
                             spaceBelow,
                             windowHeight: window.innerHeight
                         });
-
+                        
                         if (spaceAbove < tooltipHeight && spaceBelow > tooltipHeight) {
                             // Nicht genug Platz oben → zeige unten
                             console.log('[MDM Touch] Positioning tooltip BELOW');
@@ -3635,12 +3649,12 @@ function createExcludeWordsUI() {
 // Whitelist UI erstellen
 function createWhitelistUI() {
     const colors = getThemeColors();
-
+    
     // Erstelle Container wenn nicht vorhanden
     if (!window.whitelistDiv) {
         window.whitelistDiv = document.createElement('div');
     }
-
+    
     window.whitelistDiv.style.cssText = `
         ${getSubUIPosition()}
         padding: 15px;
@@ -3833,14 +3847,14 @@ function createWhitelistUI() {
                 if (tooltip && tooltip.classList.contains('timestamp-tooltip')) {
                     const isVisible = tooltip.style.display !== 'none';
                     document.querySelectorAll('.timestamp-tooltip').forEach(t => t.style.display = 'none');
-
+                    
                     if (!isVisible) {
                         const item = this.closest('.whitelist-item');
                         const itemRect = item.getBoundingClientRect();
                         const tooltipHeight = 30;
                         const spaceAbove = itemRect.top;
                         const spaceBelow = window.innerHeight - itemRect.bottom;
-
+                        
                         if (spaceAbove < tooltipHeight && spaceBelow > tooltipHeight) {
                             tooltip.style.bottom = 'auto';
                             tooltip.style.top = '100%';
@@ -4272,28 +4286,28 @@ function createBlockedUsersUI() {
         console.log('[MDM Touch] Setting up touch handlers for user timestamps');
         const userTexts = document.querySelectorAll('.user-text');
         console.log('[MDM Touch] Found user-text elements:', userTexts.length);
-
+        
         userTexts.forEach((userText, index) => {
             userText.addEventListener('click', function(e) {
                 console.log('[MDM Touch] User text clicked, index:', index);
                 e.stopPropagation();
                 const tooltip = this.nextElementSibling;
                 console.log('[MDM Touch] Tooltip element:', tooltip);
-
+                
                 if (tooltip && tooltip.classList.contains('timestamp-tooltip')) {
                     const isVisible = tooltip.style.display !== 'none';
                     console.log('[MDM Touch] Tooltip currently visible:', isVisible);
                     document.querySelectorAll('.timestamp-tooltip').forEach(t => t.style.display = 'none');
-
+                    
                     if (!isVisible) {
                         const item = this.closest('.user-item');
                         const itemRect = item.getBoundingClientRect();
                         const tooltipHeight = 30;
                         const spaceAbove = itemRect.top;
                         const spaceBelow = window.innerHeight - itemRect.bottom;
-
+                        
                         console.log('[MDM Touch] User positioning:', { top: itemRect.top, spaceAbove, spaceBelow });
-
+                        
                         if (spaceAbove < tooltipHeight && spaceBelow > tooltipHeight) {
                             console.log('[MDM Touch] Positioning user tooltip BELOW');
                             tooltip.style.bottom = 'auto';
@@ -5898,7 +5912,7 @@ function restoreData(event) {
 
             // 6. Daten zusammenführen
             const currentWhitelist = new Set(loadWhitelistWords());
-
+            
             // --- Wörter ---
             restoredData.excludeWords.forEach(word => {
                 if (!currentWords.has(word)) {
