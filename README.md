@@ -32,7 +32,6 @@ Voraussetzung: [Tampermonkey](https://www.tampermonkey.net/) oder eine ähnliche
 - **Sortierungsspeicher**: Speichere deine bevorzugten Sortierungseinstellungen
 
 ### UI-Optimierungen
-- **Share-Buttons ausblenden**: Minimiere die Benutzeroberfläche
 - **Händlernamen-Entfernung**: Entferne automatisch Händlernamen aus Deal-Titeln
 
 ## Verwendung
