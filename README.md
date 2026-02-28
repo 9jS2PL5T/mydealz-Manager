@@ -2,6 +2,14 @@
 
 Ein Userscript zur Verwaltung und Filterung von Deals auf mydealz.de und preisjaeger.at.
 
+## Hinweis zur Projektentwicklung
+
+Dieses Projekt wird überwiegend von mir allein entwickelt und gepflegt. 
+Ich bin kein professioneller Softwareentwickler, sondern habe den mydealz Manager aus persönlichem Interesse und mithilfe von KI-Unterstützung erstellt.
+
+Der Code entspricht möglicherweise nicht in allen Bereichen etablierten Best Practices oder typischen Architekturmustern. 
+Feedback, Verbesserungsvorschläge oder konstruktive Hinweise sind jederzeit willkommen.
+
 ## Installation
 
 Installiere das Script über [Greasyfork](https://greasyfork.org/de/scripts/522038-der-mydealz-manager-deine-pers%C3%B6nliche-deal-zentrale).
