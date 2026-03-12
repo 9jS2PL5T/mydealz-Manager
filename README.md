@@ -25,15 +25,23 @@ Voraussetzung: [Tampermonkey](https://www.tampermonkey.net/) oder eine ähnliche
 - **Preisfilter**: Setze eine Obergrenze für Deal-Preise
 - **Temperaturfilter**: Blende Deals unter 0° automatisch aus
 
+<div align="center">
+  
 ![ezgif-52bf62337b566571](https://github.com/user-attachments/assets/c2c70ae5-e184-4874-b7e6-a66252cfa217)
+
+</div>
 
 ### Verwaltung
 - **Schnelles Ausblenden**: Klick auf das [X]-Symbol bei einem Deal zum sofortigen Ausblenden
 - **Zentrale Einstellungen**: Verwaltung aller Filter über das Zahnrad-Icon
 - **Backup & Restore**: Exportiere und importiere deine Filterlisten als JSON-Datei
 - **Sortierungsspeicher**: Speichere deine bevorzugten Sortierungseinstellungen
+  
+<div align="center">
 
 ![ezgif-5799728f53aac474](https://github.com/user-attachments/assets/740dc081-84bb-4f9a-95f9-f7df8844f27f)
+
+</div>
 
 ### UI-Optimierungen
 - **Händlernamen-Entfernung**: Entferne automatisch Händlernamen aus Deal-Titeln
