@@ -33,6 +33,8 @@ Voraussetzung: [Tampermonkey](https://www.tampermonkey.net/) oder eine ähnliche
 - **Backup & Restore**: Exportiere und importiere deine Filterlisten als JSON-Datei
 - **Sortierungsspeicher**: Speichere deine bevorzugten Sortierungseinstellungen
 
+![ezgif-5799728f53aac474](https://github.com/user-attachments/assets/740dc081-84bb-4f9a-95f9-f7df8844f27f)
+
 ### UI-Optimierungen
 - **Händlernamen-Entfernung**: Entferne automatisch Händlernamen aus Deal-Titeln
 
