@@ -25,6 +25,8 @@ Voraussetzung: [Tampermonkey](https://www.tampermonkey.net/) oder eine ähnliche
 - **Preisfilter**: Setze eine Obergrenze für Deal-Preise
 - **Temperaturfilter**: Blende Deals unter 0° automatisch aus
 
+![ezgif-52bf62337b566571](https://github.com/user-attachments/assets/c2c70ae5-e184-4874-b7e6-a66252cfa217)
+
 ### Verwaltung
 - **Schnelles Ausblenden**: Klick auf das [X]-Symbol bei einem Deal zum sofortigen Ausblenden
 - **Zentrale Einstellungen**: Verwaltung aller Filter über das Zahnrad-Icon
