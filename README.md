@@ -39,7 +39,7 @@ Voraussetzung: [Tampermonkey](https://www.tampermonkey.net/) oder eine ähnliche
   
 <div align="center">
 
-![ezgif-5799728f53aac474](https://github.com/user-attachments/assets/740dc081-84bb-4f9a-95f9-f7df8844f27f)
+![ezgif-14e9a511016c1fec](https://github.com/user-attachments/assets/d7e1ac51-0f15-4b69-8638-bf990f50a907)
 
 </div>
 
