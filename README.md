@@ -43,9 +43,6 @@ Voraussetzung: [Tampermonkey](https://www.tampermonkey.net/) oder eine ähnliche
 
 </div>
 
-### UI-Optimierungen
-- **Händlernamen-Entfernung**: Entferne automatisch Händlernamen aus Deal-Titeln
-
 ## Verwendung
 
 1. Öffne mydealz.de oder preisjaeger.at
