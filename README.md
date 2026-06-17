@@ -2,8 +2,7 @@
 
 Ein Userscript zur Verwaltung und Filterung von Deals auf mydealz.de und preisjaeger.at.
 
-> **🌍 International Users:** This script can easily be adapted for *hotukdeals, Dealabs, Pepper.pl, Chollometro*, etc. [Scroll down to the English section](#international-users--support-for-other-countries) to request support for your country!
-
+> **🌍 International Users:** This script can easily be adapted for *hotukdeals, Dealabs, Pepper.pl, Chollometro*, etc. [Scroll down to the English section](#-international-users--support-for-other-countries) to request support for your country!
 ---
 
 ## Hinweis zur Projektentwicklung
