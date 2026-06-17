@@ -2,6 +2,10 @@
 
 Ein Userscript zur Verwaltung und Filterung von Deals auf mydealz.de und preisjaeger.at.
 
+> **🌍 International Users:** This script can easily be adapted for *hotukdeals, Dealabs, Pepper.pl, Chollometro*, etc. [Scroll down to the English section](#-international-users--support-for-other-countries) to request support for your country!
+
+---
+
 ## Hinweis zur Projektentwicklung
 
 Dieses Projekt wird überwiegend von mir allein entwickelt und gepflegt. 
@@ -63,3 +67,22 @@ MIT
 ## Diskussion
 
 [Diskussionsthread auf mydealz](https://www.mydealz.de/diskussion/tampermonkey-script-fur-mydealz-2299700)
+
+---
+
+## 🌍 International Users / Support for Other Countries
+
+**English:**
+This Tampermonkey / Violentmonkey script is built specifically for the platform structure of the **Atolls / Pepper.com** network. Because these deal platforms share a highly similar technical infrastructure, this script can easily be adapted for other international versions of the network.
+
+If you want to use this script to manage, filter, or hide deals on your local platform, **please open a GitHub Issue or comment on existing ones!** Once there is interest from your country, adding support for your local platform is a quick and easy task.
+
+### Potential Platforms for Adaptation (Atolls / Pepper Network):
+*   **United Kingdom:** hotukdeals.com
+*   **France:** Dealabs.com
+*   **Poland:** Pepper.pl
+*   **Spain:** Chollometro.com
+*   **Mexico:** Promodescuentos.com
+*   **Sweden:** Pepperdeals.se
+*   **USA:** Pepperdeals.com
+*   ... and other regional platforms of the Atolls Germany GmbH & Pepper network.
