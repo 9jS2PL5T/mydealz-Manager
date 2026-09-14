@@ -95,7 +95,7 @@ Dieses Projekt ist ein inoffizielles Userscript und steht in keiner Verbindung z
 * **Reine Client-Seite:** Das Skript arbeitet ausschließlich lokal in deinem Browser und passt lediglich die Darstellung der Webseite an.
 * **Keine Umgehung:** Es werden keine technischen Schutzmaßnahmen der Plattformen umgangen.
 * **Keine Affiliate-Manipulation:** Es werden keine Affiliate-Links verändert, manipuliert oder durch eigene Erlöscodes ersetzt.
-* **Datenschutz:** Es findet keinerlei Datenübertragung an den Entwickler oder Dritte statt. Alle Filterlisten und Einstellungen werden lokal in deinem Browser gespeichert.
+* **Datenschutz:** Es findet keinerlei Datenübertragung an den Entwickler oder Dritte statt. Alle Filterlisten und Einstellungen werden standardmäßig lokal in deinem Browser gespeichert. Bei aktivierter Auto-Sync-Funktion erfolgt lediglich ein direkter, verschlüsselter Datenaustausch zwischen deinem Browser und deiner eigenen, von dir konfigurierten GitHub-Gist-ID.
 * **Markenrechte:** Alle Marken- und Produktnamen sind Eigentum der jeweiligen Rechteinhaber und werden hier ausschließlich zur Beschreibung der Kompatibilität verwendet.
 
 Die Nutzung dieses Skripts erfolgt auf eigene Verantwortung. Der Entwickler übernimmt keine Haftung für verpasste Deals, Darstellungsfehler oder eventuelle Verstöße gegen die Nutzungsbedingungen der jeweiligen Plattformen.
